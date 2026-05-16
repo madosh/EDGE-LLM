@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Go Control Plane ──────────────────────────────────────────────────────
+  go:
+    name: Go (control-plane)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control-plane
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Go proto plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0
+
+      - name: Generate proto
+        run: |
+          mkdir -p gen
+          protoc \
+            --go_out=. \
+            --go_opt=module=github.com/cami-fleet/control-plane \
+            --go-grpc_out=. \
+            --go-grpc_opt=module=github.com/cami-fleet/control-plane \
+            -I proto \
+            proto/device.proto
+
+      - name: Tidy
+        run: GOFLAGS=-mod=mod go mod tidy
+
+      - name: Vet
+        run: GOFLAGS=-mod=mod go vet ./...
+
+      - name: Test
+        run: GOFLAGS=-mod=mod go test -race -timeout 120s ./...
+
+  # ── Rust Agent ────────────────────────────────────────────────────────────
+  rust:
+    name: Rust (agent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent -> target
+
+      - name: Format check
+        working-directory: agent
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: agent
+        run: cargo clippy -- -D warnings
+
+      - name: Test
+        working-directory: agent
+        run: cargo test
+
+  # ── SvelteKit Web UI ──────────────────────────────────────────────────────
+  web:
+    name: Web (SvelteKit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci || npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run check
+
+      - name: Test
+        run: npm test
+
+  # ── Docker Build Verification ─────────────────────────────────────────────
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build control-plane
+        run: docker build -f control-plane/Dockerfile -t cami-fleet/control-plane:ci .
+
+      - name: Build agent
+        run: docker build -f agent/Dockerfile -t cami-fleet/agent:ci .
+
+      - name: Build web
+        run: docker build -f web/Dockerfile -t cami-fleet/web:ci ./web

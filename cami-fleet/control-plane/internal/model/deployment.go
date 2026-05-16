@@ -1,0 +1,49 @@
+package model
+
+import "time"
+
+type DeploymentStatus string
+
+const (
+	DeploymentPending    DeploymentStatus = "pending"
+	DeploymentInProgress DeploymentStatus = "in_progress"
+	DeploymentCompleted  DeploymentStatus = "completed"
+	DeploymentFailed     DeploymentStatus = "failed"
+)
+
+type DeviceDeploymentStatus string
+
+const (
+	DDPending     DeviceDeploymentStatus = "pending"
+	DDDownloading DeviceDeploymentStatus = "downloading"
+	DDVerifying   DeviceDeploymentStatus = "verifying"
+	DDRunning     DeviceDeploymentStatus = "running"
+	DDFailed      DeviceDeploymentStatus = "failed"
+)
+
+type Deployment struct {
+	ID             string            `json:"id"`
+	ModelID        string            `json:"model_id"`
+	ArtifactURL    string            `json:"artifact_url"`
+	ArtifactSHA256 string            `json:"artifact_sha256"`
+	TagSelector    map[string]string `json:"tag_selector"`
+	Status         DeploymentStatus  `json:"status"`
+	CreatedAt      time.Time         `json:"created_at"`
+	CompletedAt    *time.Time        `json:"completed_at"`
+	Devices        []DeviceDeployment `json:"devices,omitempty"`
+}
+
+type DeviceDeployment struct {
+	DeploymentID string                 `json:"deployment_id"`
+	DeviceID     string                 `json:"device_id"`
+	DeviceName   string                 `json:"device_name,omitempty"`
+	Status       DeviceDeploymentStatus `json:"status"`
+	ErrorMsg     *string                `json:"error_msg"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+}
+
+type ArtifactInfo struct {
+	Name   string `json:"name"`
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
+}

@@ -1,0 +1,242 @@
+name: cami-fleet
+
+volumes:
+  pg-data:
+  ch-data:
+  certs:
+  ollama-data:
+  litert-cache:
+
+networks:
+  fleet:
+    driver: bridge
+
+services:
+
+  # ── One-shot init: generate mTLS certs ──────────────────────────────────────
+  cert-gen:
+    image: alpine:3.19
+    command: >
+      sh -c "apk add --no-cache openssl && sh /scripts/gen-certs.sh"
+    environment:
+      CERT_DIR: /certs
+    volumes:
+      - certs:/certs
+      - ./scripts/gen-certs.sh:/scripts/gen-certs.sh:ro
+    networks:
+      - fleet
+
+  # ── One-shot init: create stub artifact + sha256 sidecar ────────────────────
+  artifact-init:
+    image: alpine:3.19
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /artifacts/sample-gemma-4-e2b.tar.gz ]; then
+          echo "FAKE MODEL ARTIFACT — sample-gemma-4-e2b v0.1 (testing stub)" > /tmp/model-info.txt
+          tar -czf /artifacts/sample-gemma-4-e2b.tar.gz -C /tmp model-info.txt
+          sha256sum /artifacts/sample-gemma-4-e2b.tar.gz | cut -d' ' -f1 \
+            > /artifacts/sample-gemma-4-e2b.tar.gz.sha256
+          echo "Artifact SHA-256: $(cat /artifacts/sample-gemma-4-e2b.tar.gz.sha256)"
+        else
+          echo "Artifact already exists — skipping"
+        fi
+    volumes:
+      - ./artifacts:/artifacts
+    networks:
+      - fleet
+
+  # ── Postgres 16 ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       cami
+      POSTGRES_USER:     cami
+      POSTGRES_PASSWORD: cami
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cami -d cami"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - fleet
+
+  # ── ClickHouse 23.8 LTS ──────────────────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    environment:
+      CLICKHOUSE_DB:                     cami
+      CLICKHOUSE_USER:                   cami
+      CLICKHOUSE_PASSWORD:               cami
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - ch-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user=cami --password=cami --query='SELECT 1'"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    networks:
+      - fleet
+
+  # ── NATS 2.10 with JetStream ─────────────────────────────────────────────────
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz | grep -q ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - fleet
+
+  # ── LiteRT (optional — Google edge-optimized inference) ─────────────────────
+  # Uncomment to use Google LiteRT-LM for on-device AI inference via its
+  # Gemini-compatible REST API.  Requires: pip install litert-lm
+  # For NPU/GPU acceleration see: https://ai.google.dev/edge/litert
+  #
+  # litert:
+  #   image: python:3.12-slim
+  #   command: >
+  #     sh -c "pip install litert-lm && lit serve --model gemma3-1b --port 8000 --host 0.0.0.0"
+  #   volumes:
+  #     - litert-cache:/root/.cache
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+  #     interval: 10s
+  #     timeout: 10s
+  #     retries: 30
+  #   networks:
+  #     - fleet
+  #   restart: unless-stopped
+
+  # ── Ollama (optional — real LLM inference) ──────────────────────────────────
+  # Uncomment to enable real model inference instead of stub telemetry.
+  # For GPU support, add: deploy: { resources: { reservations: { devices: [{capabilities: [gpu]}] }}}
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 12
+  #   networks:
+  #     - fleet
+  #   restart: unless-stopped
+
+  # ── Control Plane ─────────────────────────────────────────────────────────────
+  control-plane:
+    build:
+      context: .
+      dockerfile: control-plane/Dockerfile
+    environment:
+      POSTGRES_DSN:        "postgres://cami:cami@postgres:5432/cami?sslmode=disable"
+      CLICKHOUSE_DSN:      "clickhouse://cami:cami@clickhouse:9000/cami"
+      NATS_URL:            "nats://nats:4222"
+      GRPC_PORT:           "9090"
+      REST_PORT:           "8080"
+      API_KEY:             "${CAMI_API_KEY:-changeme}"
+      CERT_DIR:            /certs
+      ARTIFACTS_DIR:       /artifacts
+      ARTIFACTS_BASE_URL:  "http://control-plane:8080"
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - certs:/certs:ro
+      - ./artifacts:/artifacts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      cert-gen:
+        condition: service_completed_successfully
+      artifact-init:
+        condition: service_completed_successfully
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Simulated device 1 (Jetson Orin, location=barcelona) ─────────────────────
+  device-1:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    environment:
+      DEVICE_NAME:         device-barcelona-1
+      DEVICE_LABELS:       "location=barcelona,type=jetson-orin"
+      CONTROL_PLANE_URL:   "https://control-plane:9090"
+      CERT_DIR:            /certs
+      RUST_LOG:            "cami_agent=info,warn"
+      # RUNTIME_BACKEND:   ""                       # litert | ollama | stub (auto-detect if empty)
+      # LITERT_URL:        "http://litert:8000"      # uncomment with litert service
+      # LITERT_MODEL:      "gemma3-1b"               # model name served by lit serve
+      # OLLAMA_URL:        "http://ollama:11434"      # uncomment with ollama service
+    volumes:
+      - certs:/certs:ro
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      cert-gen:
+        condition: service_completed_successfully
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Simulated device 2 (Raspberry Pi 5, location=barcelona) ──────────────────
+  device-2:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    environment:
+      DEVICE_NAME:         device-barcelona-2
+      DEVICE_LABELS:       "location=barcelona,type=rpi5"
+      CONTROL_PLANE_URL:   "https://control-plane:9090"
+      CERT_DIR:            /certs
+      RUST_LOG:            "cami_agent=info,warn"
+      # RUNTIME_BACKEND:   ""                       # litert | ollama | stub (auto-detect if empty)
+      # LITERT_URL:        "http://litert:8000"      # uncomment with litert service
+      # LITERT_MODEL:      "gemma3-1b"               # model name served by lit serve
+      # OLLAMA_URL:        "http://ollama:11434"      # uncomment with ollama service
+    volumes:
+      - certs:/certs:ro
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      cert-gen:
+        condition: service_completed_successfully
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Web UI (SvelteKit) ──────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      API_KEY:              "${CAMI_API_KEY:-changeme}"
+      CONTROL_PLANE_URL:    "http://control-plane:8080"
+    ports:
+      - "5173:5173"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    networks:
+      - fleet
+    restart: unless-stopped

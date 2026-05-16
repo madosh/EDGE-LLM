@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	* {
+		box-sizing: border-box;
+	}
+}
+
+@layer components {
+	.badge-online {
+		@apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-900/60 text-emerald-300 ring-1 ring-emerald-700;
+	}
+	.badge-offline {
+		@apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-800 text-gray-400 ring-1 ring-gray-700;
+	}
+	.card {
+		@apply bg-gray-900 rounded-xl border border-gray-800 p-5;
+	}
+	.btn-primary {
+		@apply bg-violet-600 hover:bg-violet-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm;
+	}
+	.btn-secondary {
+		@apply bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg transition-colors text-sm;
+	}
+}

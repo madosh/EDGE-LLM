@@ -1,0 +1,40 @@
+# ── Go ──────────────────────────────────────────
+control-plane/gen/
+control-plane/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# ── Rust ────────────────────────────────────────
+agent/target/
+
+# ── Node / SvelteKit ───────────────────────────
+web/node_modules/
+web/.svelte-kit/
+web/build/
+
+# ── Environment / secrets ──────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Artifacts (generated at runtime) ───────────
+artifacts/*.tar.gz
+artifacts/*.sha256
+
+# ── Docker ─────────────────────────────────────
+docker-compose.override.yml
+
+# ── IDE ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── OS ─────────────────────────────────────────
+*.log

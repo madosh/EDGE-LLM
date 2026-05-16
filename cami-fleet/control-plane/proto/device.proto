@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package cami.device.v1;
+
+option go_package = "github.com/cami-fleet/control-plane/gen;pb";
+
+// AgentService is the single gRPC service devices talk to over mTLS.
+service AgentService {
+  // Called once at startup; returns a stable device_id (uuid).
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Periodic liveness pulse (every 10 s). Drives online/offline detection.
+  rpc SendHeartbeat(Heartbeat) returns (HeartbeatAck);
+
+  // Client-side streaming: device pushes a TelemetryReport every 5 s.
+  rpc StreamTelemetry(stream TelemetryReport) returns (Empty);
+
+  // Server-side streaming: control plane pushes deployment instructions.
+  rpc WatchDeployments(WatchRequest) returns (stream DeploymentInstruction);
+
+  // Unary: device reports its progress on a specific deployment.
+  rpc AckDeployment(DeploymentAck) returns (Empty);
+}
+
+message Empty {}
+
+message RegisterRequest {
+  string              device_name   = 1;
+  map<string, string> labels        = 2;
+  string              agent_version = 3;
+  string              arch          = 4;
+  string              os            = 5;
+}
+
+message RegisterResponse {
+  string device_id = 1; // stable UUID assigned by control plane
+}
+
+message Heartbeat {
+  string device_id = 1;
+  int64  ts_unix   = 2; // seconds since epoch
+}
+
+message HeartbeatAck {
+  int64 server_ts_unix = 1;
+}
+
+// TelemetryReport is emitted every 5 s while a model is loaded.
+message TelemetryReport {
+  string device_id = 1;
+  string model_id  = 2;
+  float  tps       = 3; // tokens / second (fake for v0)
+  float  ttft_ms   = 4; // time-to-first-token ms (fake for v0)
+  float  mem_mb    = 5; // model memory footprint MB
+  string status    = 6; // "idle" | "loading" | "running"
+  int64  ts_unix   = 7;
+}
+
+message WatchRequest {
+  string device_id = 1;
+}
+
+// Sent by control plane when a new deployment targets this device.
+message DeploymentInstruction {
+  string deployment_id   = 1;
+  string model_id        = 2;
+  string artifact_url    = 3; // http URL served by control plane
+  string artifact_sha256 = 4; // hex-encoded SHA-256 of the tarball
+}
+
+// Sent by device at each stage of the deployment lifecycle.
+message DeploymentAck {
+  string deployment_id = 1;
+  string device_id     = 2;
+  // "downloading" | "verifying" | "running" | "failed"
+  string status        = 3;
+  string error_msg     = 4;
+}
