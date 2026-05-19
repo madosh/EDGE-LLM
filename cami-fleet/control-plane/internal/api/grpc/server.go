@@ -53,7 +53,17 @@ func NewServer(pg *pgstore.Store, ch *chstore.Store, nats *natsclient.Client) *S
 	}
 }
 
-// pushDeployment fans out a deployment instruction to all currently watching streams
+// RegisterWatcher registers an in-memory channel for a device and returns it.
+// Primarily used for testing; production code uses WatchDeployments gRPC stream.
+func (s *Server) RegisterWatcher(deviceID string) chan *pb.DeploymentInstruction {
+	ch := make(chan *pb.DeploymentInstruction, 8)
+	s.mu.Lock()
+	s.watchChs[deviceID] = append(s.watchChs[deviceID], ch)
+	s.mu.Unlock()
+	return ch
+}
+
+// PushDeployment fans out a deployment instruction to all currently watching streams
 // for a given device, AND publishes on NATS (for future durability).
 func (s *Server) PushDeployment(deviceID string, instr *pb.DeploymentInstruction) {
 	s.mu.RLock()

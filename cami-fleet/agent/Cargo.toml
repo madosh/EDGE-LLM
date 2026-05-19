@@ -3,6 +3,10 @@ name    = "cami-agent"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "cami_agent"
+path = "src/lib.rs"
+
 [[bin]]
 name = "cami-agent"
 path = "src/main.rs"
