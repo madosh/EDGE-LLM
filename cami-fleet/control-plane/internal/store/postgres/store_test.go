@@ -213,7 +213,10 @@ func TestDeploymentCompletionLogic(t *testing.T) {
 	store.UpdateDeviceDeploymentStatus(ctx, dep.ID, dev2ID, "running", "")
 	store.CheckDeploymentCompletion(ctx, dep.ID)
 
-	got, _ := store.GetDeployment(ctx, dep.ID)
+	got, err := store.GetDeployment(ctx, dep.ID)
+	if err != nil {
+		t.Fatalf("GetDeployment: %v", err)
+	}
 	if string(got.Status) != "completed" {
 		t.Errorf("expected completed, got %s", got.Status)
 	}
@@ -244,7 +247,10 @@ func TestDeploymentPartialFailure(t *testing.T) {
 	store.UpdateDeviceDeploymentStatus(ctx, dep.ID, dev2ID, "failed", "download error")
 	store.CheckDeploymentCompletion(ctx, dep.ID)
 
-	got, _ := store.GetDeployment(ctx, dep.ID)
+	got, err := store.GetDeployment(ctx, dep.ID)
+	if err != nil {
+		t.Fatalf("GetDeployment: %v", err)
+	}
 	if string(got.Status) != "partial_failure" {
 		t.Errorf("expected partial_failure, got %s", got.Status)
 	}

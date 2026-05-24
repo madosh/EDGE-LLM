@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI on a Phone CPU — A Simple Explanation</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-2: #20243a;
+      --border: #2a2d3e;
+      --accent: #6c63ff;
+      --accent2: #00d9a3;
+      --accent3: #ff6584;
+      --accent4: #ffb74d;
+      --text: #e2e8f0;
+      --muted: #8892a4;
+      --heading: #ffffff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      line-height: 1.7;
+    }
+
+    /* ── hero ───────────────────────────────── */
+    .hero {
+      background: linear-gradient(135deg, #1a1d27 0%, #0f1117 60%, #14102a 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 72px 24px 56px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 60% at 50% 0%, rgba(108,99,255,.18) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 80%, rgba(0,217,163,.10) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(108,99,255,.15);
+      color: var(--accent);
+      border: 1px solid rgba(108,99,255,.35);
+      border-radius: 99px;
+      padding: 5px 16px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5.5vw, 3.6rem);
+      font-weight: 800;
+      color: var(--heading);
+      letter-spacing: -.025em;
+      margin-bottom: 18px;
+      position: relative;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .hero h1 span.g1 { color: var(--accent); }
+    .hero h1 span.g2 { color: var(--accent2); }
+    .hero .sub {
+      max-width: 680px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 1.1rem;
+      position: relative;
+    }
+    .hero-source {
+      margin-top: 22px;
+      font-size: .85rem;
+      color: var(--muted);
+      position: relative;
+    }
+    .hero-source a {
+      color: var(--accent2);
+      text-decoration: none;
+      border-bottom: 1px dotted rgba(0,217,163,.4);
+    }
+    .hero-source a:hover { color: #fff; }
+
+    /* ── page wrap ───────────────────────────── */
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 56px 24px 96px;
+    }
+
+    /* ── tldr card ───────────────────────────── */
+    .tldr {
+      background: linear-gradient(135deg, rgba(108,99,255,.10), rgba(0,217,163,.06));
+      border: 1px solid rgba(108,99,255,.30);
+      border-radius: 16px;
+      padding: 28px 32px;
+      margin-bottom: 56px;
+    }
+    .tldr .label {
+      display: inline-block;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .tldr p {
+      font-size: 1.08rem;
+      color: var(--text);
+    }
+    .tldr p + p { margin-top: 12px; }
+
+    /* ── sections ────────────────────────────── */
+    section { margin-bottom: 64px; }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .section-num {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .section-head h2 {
+      font-size: 1.6rem;
+      color: var(--heading);
+      font-weight: 700;
+      letter-spacing: -.01em;
+    }
+    section p { color: var(--text); margin-bottom: 14px; }
+    section p .em { color: var(--accent2); font-weight: 600; }
+    section p .em-purple { color: var(--accent); font-weight: 600; }
+
+    /* analogy callout */
+    .analogy {
+      background: var(--surface);
+      border-left: 3px solid var(--accent4);
+      border-radius: 0 12px 12px 0;
+      padding: 16px 22px;
+      margin: 18px 0;
+      color: var(--text);
+    }
+    .analogy .tag {
+      display: inline-block;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent4);
+      margin-bottom: 6px;
+    }
+    .analogy p { margin: 0; color: var(--text); }
+
+    /* pipeline */
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 20px 0 6px;
+    }
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      transition: transform .2s, border-color .2s;
+    }
+    .step:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .step .step-num {
+      font-size: .68rem;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .step h4 {
+      font-size: 1.08rem;
+      color: var(--heading);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .step h4 .arrow { color: var(--accent); }
+    .step p {
+      font-size: .92rem;
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.55;
+    }
+
+    /* numbers grid */
+    .numbers {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .number {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      text-align: center;
+    }
+    .number .val {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent2);
+      letter-spacing: -.02em;
+      line-height: 1.1;
+    }
+    .number .lbl {
+      font-size: .82rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* glossary */
+    .glossary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px 4px;
+    }
+    .glossary dl { padding: 0; }
+    .glossary dt {
+      color: var(--accent);
+      font-weight: 700;
+      padding: 14px 22px 4px;
+      font-size: .98rem;
+    }
+    .glossary dd {
+      color: var(--text);
+      padding: 0 22px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: .95rem;
+    }
+    .glossary dl > div:last-child dd { border-bottom: none; }
+
+    /* impact list */
+    .impact {
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+    .impact li {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent2);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: var(--text);
+    }
+    .impact li strong { color: var(--accent2); }
+
+    /* footer */
+    footer {
+      text-align: center;
+      padding: 32px 24px;
+      color: var(--muted);
+      font-size: .85rem;
+      border-top: 1px solid var(--border);
+    }
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    footer a:hover { color: #fff; }
+
+    /* responsive */
+    @media (max-width: 700px) {
+      .pipeline { grid-template-columns: 1fr; }
+      .tldr { padding: 22px 20px; }
+      main { padding: 40px 18px 72px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <span class="hero-badge">On-device AI · explained simply</span>
+  <h1>How your <span class="g1">phone's CPU</span> just became an <span class="g2">AI engine</span></h1>
+  <p class="sub">Big AI models used to need GPUs or special chips. New tools from Arm and Google now make ordinary CPUs run them fast — small enough to fit on a phone, quick enough to feel instant.</p>
+  <p class="hero-source">
+    Based on: <a href="https://developers.googleblog.com/accelerating-on-device-ai-a-look-at-arm-and-google-ai-edge-optimization/" target="_blank" rel="noopener">Google Developers Blog · May 14, 2026</a>
+  </p>
+</div>
+
+<main>
+
+  <!-- ── TL;DR ───────────────────────────────── -->
+  <div class="tldr">
+    <span class="label">In one paragraph</span>
+    <p>An AI model is mostly a giant pile of multiplications. Arm built a new feature into modern CPUs called <strong>SME2</strong> that does those multiplications way faster. Google's <strong>LiteRT</strong> software automatically uses it. Together, they can generate <strong>11 seconds of music</strong> on a phone in under 7 seconds — no GPU, no internet.</p>
+  </div>
+
+  <!-- ── 1. The problem ──────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">1</div>
+      <h2>The problem they were trying to solve</h2>
+    </div>
+    <p>Modern AI models (image generators, music generators, chatbots) are huge. Until now, running them on a phone meant two bad choices:</p>
+    <p>→ Run on the <span class="em-purple">CPU</span>: works everywhere, but slow.<br>
+       → Run on a <span class="em-purple">specialized chip</span> (NPU / GPU): fast, but only a few phones have one, and every phone vendor's chip is different.</p>
+    <div class="analogy">
+      <span class="tag">Analogy</span>
+      <p>Imagine you need to deliver pizzas across a city. The CPU is a regular bicycle — every house has one, but it's slow. A GPU/NPU is a sports car — fast, but only some people own one, and every brand needs its own special fuel.</p>
+    </div>
+  </section>
+
+  <!-- ── 2. The hardware trick ───────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">2</div>
+      <h2>The hardware trick — Arm SME2</h2>
+    </div>
+    <p>Arm (the company that designs the chips in almost every phone) added a new feature to their newest CPUs called <span class="em">SME2</span> — short for <em>Scalable Matrix Extension 2</em>.</p>
+    <p>An AI model spends almost all its time doing one type of math: multiplying big grids of numbers (called <strong>matrices</strong>). SME2 is a built-in calculator inside the CPU that does exactly that — and only that — extremely fast.</p>
+    <div class="analogy">
+      <span class="tag">Analogy</span>
+      <p>It's like adding a pizza-folding robot to the bicycle. The bike still goes everywhere, but now there's a special tool clipped on for the one job you do over and over. The result: up to <strong>5× faster</strong> AI math on the same CPU.</p>
+    </div>
+  </section>
+
+  <!-- ── 3. The software bridge ──────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">3</div>
+      <h2>The software bridge — KleidiAI inside LiteRT</h2>
+    </div>
+    <p>Hardware is useless without software that knows how to use it. So:</p>
+    <p>→ Arm wrote tiny ultra-optimized routines called <span class="em-purple">KleidiAI</span> that speak directly to SME2.<br>
+       → Google plugged KleidiAI into the math engine inside <span class="em">LiteRT</span> (their on-device AI runtime, formerly TensorFlow Lite).</p>
+    <p>So if you just run your model with LiteRT on a modern Arm phone, it <strong>automatically</strong> uses SME2. The developer doesn't write any special code. No assembly, no hardware tricks.</p>
+    <div class="analogy">
+      <span class="tag">Analogy</span>
+      <p>You drop your pizza order into the app and it picks the bike with the robot attachment automatically — you don't even know it's there.</p>
+    </div>
+  </section>
+
+  <!-- ── 4. The pipeline ─────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">4</div>
+      <h2>How a model gets ready: Convert → Optimize → Deploy</h2>
+    </div>
+    <p>Google bundles three tools that take a model from a research notebook all the way to running on a phone:</p>
+
+    <div class="pipeline">
+      <div class="step">
+        <div class="step-num">Step 1</div>
+        <h4>Convert <span class="arrow">→</span></h4>
+        <p><strong>LiteRT-Torch</strong> turns a PyTorch model (research format) into a <code>.tflite</code> file (phone format).</p>
+      </div>
+      <div class="step">
+        <div class="step-num">Step 2</div>
+        <h4>Optimize <span class="arrow">→</span></h4>
+        <p><strong>Model Explorer</strong> shows which parts of the model can be shrunk safely. <strong>AI Edge Quantizer</strong> shrinks them.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">Step 3</div>
+        <h4>Deploy</h4>
+        <p><strong>LiteRT</strong> runs the small <code>.tflite</code> file on the device, automatically using SME2 if available.</p>
+      </div>
+    </div>
+
+    <div class="analogy" style="margin-top: 20px;">
+      <span class="tag">What does "shrink" mean?</span>
+      <p>Models normally store each number using <strong>32 bits</strong> (very precise, but big). Quantization rounds them down to <strong>8 bits</strong> (less precise, but 4× smaller and much faster). Done carefully, you can't hear or see the difference — but the model now fits comfortably in phone memory.</p>
+    </div>
+  </section>
+
+  <!-- ── 5. The proof ────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">5</div>
+      <h2>The proof — generating music on a phone</h2>
+    </div>
+    <p>To prove it works, Google + Arm took Stability AI's <strong>Stable Audio Open Small</strong> model — which generates 11-second stereo music clips from text prompts — and ran it entirely on a phone. The results, compared to the unoptimized original:</p>
+
+    <div class="numbers">
+      <div class="number">
+        <div class="val">14 s → 6.6 s</div>
+        <div class="lbl">Generation time on a SME2 Android phone</div>
+      </div>
+      <div class="number">
+        <div class="val">10 s → 4.3 s</div>
+        <div class="lbl">Generation time on a MacBook M4</div>
+      </div>
+      <div class="number">
+        <div class="val">~4×</div>
+        <div class="lbl">Smaller memory footprint</div>
+      </div>
+      <div class="number">
+        <div class="val">~0%</div>
+        <div class="lbl">Loss in audio quality</div>
+      </div>
+    </div>
+    <p style="margin-top: 18px;">In other words: the optimized version is about <strong>twice as fast</strong>, <strong>four times smaller</strong>, and still sounds the same. And it runs entirely on the CPU — no GPU, no NPU, no cloud.</p>
+  </section>
+
+  <!-- ── 6. Why it matters ───────────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">6</div>
+      <h2>Why this actually matters</h2>
+    </div>
+    <ul class="impact">
+      <li><strong>Reach.</strong> Almost every phone in the world has an Arm CPU. AI features no longer require a flagship phone with a special chip.</li>
+      <li><strong>Privacy.</strong> Your prompts and outputs never leave the device. No server, no logs.</li>
+      <li><strong>Offline.</strong> Works on a plane, in the subway, in a remote village. No internet needed.</li>
+      <li><strong>Cost.</strong> No cloud GPU bills. The user's own CPU does the work.</li>
+      <li><strong>Speed.</strong> No network round-trip — responses can start in milliseconds.</li>
+    </ul>
+  </section>
+
+  <!-- ── 7. Connection to this project ───────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">7</div>
+      <h2>How this connects to Cami Fleet</h2>
+    </div>
+    <p>This project already supports a <strong>LiteRT backend</strong> on the device agent, which means everything described above can work behind the scenes — once a device has LiteRT installed and an Arm SME2 CPU, our agent automatically benefits from KleidiAI acceleration without any code change.</p>
+    <p>The natural next steps for the fleet to take full advantage of this:</p>
+    <ul class="impact">
+      <li><strong>Detect &amp; report</strong> each device's CPU capabilities (SME2, NEON, etc.) as labels, so deployments can target capable hardware.</li>
+      <li><strong>Track precision</strong> (FP32 / FP16 / INT8) per deployed model in the dashboard.</li>
+      <li><strong>Bundle a sample</strong> quantized <code>.tflite</code> model so the demo stack shows real on-device LiteRT inference end-to-end.</li>
+    </ul>
+  </section>
+
+  <!-- ── glossary ────────────────────────────── -->
+  <section>
+    <div class="section-head">
+      <div class="section-num">?</div>
+      <h2>Quick glossary</h2>
+    </div>
+    <div class="glossary">
+      <dl>
+        <div>
+          <dt>CPU</dt>
+          <dd>The general-purpose brain inside every phone and laptop. Good at everything, great at nothing in particular.</dd>
+        </div>
+        <div>
+          <dt>GPU / NPU</dt>
+          <dd>Specialized chips designed for graphics or AI math. Faster than a CPU at those jobs, but not present on every device.</dd>
+        </div>
+        <div>
+          <dt>Arm</dt>
+          <dd>The company that designs the chip blueprints used in almost every smartphone (Apple, Samsung, Qualcomm, MediaTek all license from Arm).</dd>
+        </div>
+        <div>
+          <dt>SME2</dt>
+          <dd>A new add-on inside Arm's latest CPUs that does matrix math very fast — exactly what AI models need.</dd>
+        </div>
+        <div>
+          <dt>KleidiAI</dt>
+          <dd>Tiny pieces of Arm-written code that know how to drive SME2.</dd>
+        </div>
+        <div>
+          <dt>LiteRT</dt>
+          <dd>Google's runtime for running AI models on a device (formerly TensorFlow Lite). Uses KleidiAI under the hood.</dd>
+        </div>
+        <div>
+          <dt>XNNPACK</dt>
+          <dd>The math engine inside LiteRT. It's the part that actually calls KleidiAI.</dd>
+        </div>
+        <div>
+          <dt>Quantization</dt>
+          <dd>The trick of storing each number with fewer bits (e.g. 8 instead of 32). Makes models smaller and faster with almost no quality loss.</dd>
+        </div>
+        <div>
+          <dt>.tflite</dt>
+          <dd>The file format LiteRT uses to load a model on a device. Like an MP3 for AI models.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Original article:
+  <a href="https://developers.googleblog.com/accelerating-on-device-ai-a-look-at-arm-and-google-ai-edge-optimization/" target="_blank" rel="noopener">developers.googleblog.com</a>
+  · Simplified explanation for the Cami Fleet docs
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arm SME2 + LiteRT — Technical Deep Dive</title>
+  <style>
+    :root {
+      --bg: #0b0d14;
+      --surface: #151823;
+      --surface-2: #1c2031;
+      --surface-3: #232844;
+      --border: #2a2f44;
+      --border-strong: #3a4060;
+      --accent: #7c6cff;
+      --accent-soft: #9a8eff;
+      --accent2: #00d9a3;
+      --accent3: #ff6584;
+      --accent4: #ffb74d;
+      --accent5: #4dabff;
+      --text: #d8dee9;
+      --text-strong: #f0f3f8;
+      --muted: #8892a4;
+      --muted-2: #5d6478;
+      --heading: #ffffff;
+
+      --code-bg: #0c0f1a;
+      --code-text: #c5cae9;
+      --code-kw: #c792ea;
+      --code-fn: #82aaff;
+      --code-str: #c3e88d;
+      --code-num: #f78c6c;
+      --code-cmt: #5d6478;
+      --code-type: #ffcb6b;
+      --code-op: #89ddff;
+
+      --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      line-height: 1.7;
+      font-size: 15.5px;
+    }
+
+    a { color: var(--accent-soft); text-decoration: none; }
+    a:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+
+    code, pre, .mono { font-family: var(--mono); }
+    p code, li code, td code, dd code {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.88em;
+      color: var(--accent-soft);
+    }
+
+    /* ── layout ──────────────────────────────── */
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+    aside.toc {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      max-height: 100vh;
+      overflow-y: auto;
+      padding: 32px 20px 32px 24px;
+      border-right: 1px solid var(--border);
+    }
+    main {
+      padding: 56px 56px 96px;
+      min-width: 0;
+    }
+
+    /* ── toc ─────────────────────────────────── */
+    .toc-title {
+      font-size: .68rem;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--muted-2);
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .toc ol {
+      list-style: none;
+      counter-reset: toc;
+    }
+    .toc li {
+      counter-increment: toc;
+      margin: 4px 0;
+    }
+    .toc a {
+      display: block;
+      padding: 5px 10px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: .89rem;
+      border-left: 2px solid transparent;
+      transition: all .12s;
+    }
+    .toc a::before {
+      content: counter(toc, decimal-leading-zero);
+      margin-right: 10px;
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: .78rem;
+    }
+    .toc a:hover {
+      color: var(--text-strong);
+      background: var(--surface);
+      text-decoration: none;
+      border-left-color: var(--accent);
+    }
+
+    /* ── hero / header ───────────────────────── */
+    .hero {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 36px;
+      margin-bottom: 56px;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(124,108,255,.10);
+      color: var(--accent-soft);
+      border: 1px solid rgba(124,108,255,.30);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: .72rem;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-family: var(--mono);
+      margin-bottom: 22px;
+    }
+    .hero-tag .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent2);
+      box-shadow: 0 0 6px var(--accent2);
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 3.6vw, 2.6rem);
+      color: var(--heading);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: 16px;
+      line-height: 1.2;
+    }
+    .hero .lede {
+      color: var(--muted);
+      font-size: 1.08rem;
+      max-width: 760px;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 22px;
+      margin-top: 26px;
+      font-family: var(--mono);
+      font-size: .82rem;
+      color: var(--muted);
+    }
+    .hero-meta span strong {
+      color: var(--text-strong);
+      font-weight: 600;
+    }
+
+    /* ── sections ────────────────────────────── */
+    section {
+      margin-bottom: 64px;
+      scroll-margin-top: 24px;
+    }
+    section > h2 {
+      font-size: 1.55rem;
+      color: var(--heading);
+      font-weight: 700;
+      letter-spacing: -.01em;
+      margin-bottom: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+    section > h2 .sec-num {
+      font-family: var(--mono);
+      color: var(--accent);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    section > h3 {
+      font-size: 1.12rem;
+      color: var(--text-strong);
+      font-weight: 700;
+      margin: 32px 0 12px;
+      letter-spacing: -.005em;
+    }
+    section > h3::before {
+      content: '§ ';
+      color: var(--accent);
+      font-family: var(--mono);
+      font-weight: 500;
+    }
+    section p, section li { color: var(--text); }
+    section p { margin-bottom: 14px; }
+    section ul, section ol { padding-left: 22px; margin-bottom: 14px; }
+    section li { margin: 6px 0; }
+
+    /* lede paragraph */
+    section > p.lede {
+      color: var(--muted);
+      font-size: 1.02rem;
+      margin: 14px 0 24px;
+    }
+
+    /* ── code blocks ─────────────────────────── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--code-text);
+      margin: 18px 0;
+      position: relative;
+    }
+    pre::before {
+      content: attr(data-lang);
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      font-size: .7rem;
+      color: var(--muted-2);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-family: var(--mono);
+    }
+    pre .kw  { color: var(--code-kw); }
+    pre .fn  { color: var(--code-fn); }
+    pre .str { color: var(--code-str); }
+    pre .num { color: var(--code-num); }
+    pre .cmt { color: var(--code-cmt); font-style: italic; }
+    pre .typ { color: var(--code-type); }
+    pre .op  { color: var(--code-op); }
+    pre .ws  { color: var(--accent-soft); }
+
+    /* ── tables ──────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; margin: 18px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .92rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: var(--surface-2);
+      color: var(--text-strong);
+      font-weight: 600;
+      font-size: .78rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    tr:last-child td { border-bottom: none; }
+    td code { font-size: .85em; }
+    td .pos { color: var(--accent2); font-weight: 600; }
+    td .neg { color: var(--accent3); font-weight: 600; }
+
+    /* ── callouts ────────────────────────────── */
+    .note, .warn, .insight {
+      border-radius: 10px;
+      padding: 14px 18px 14px 16px;
+      margin: 18px 0;
+      border: 1px solid var(--border);
+      border-left-width: 3px;
+      background: var(--surface);
+      font-size: .94rem;
+    }
+    .note { border-left-color: var(--accent5); }
+    .note .tag { color: var(--accent5); }
+    .warn { border-left-color: var(--accent3); }
+    .warn .tag { color: var(--accent3); }
+    .insight { border-left-color: var(--accent4); }
+    .insight .tag { color: var(--accent4); }
+    .note .tag, .warn .tag, .insight .tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: .7rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+
+    /* ── diagrams ────────────────────────────── */
+    .stack-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 18px 0;
+      font-family: var(--mono);
+      font-size: .85rem;
+    }
+    .stack-row {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 14px;
+      padding: 9px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .stack-row:last-child { border-bottom: none; }
+    .stack-row .lbl {
+      color: var(--muted);
+      font-size: .75rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding-top: 2px;
+    }
+    .stack-row .box {
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      padding: 8px 14px;
+      color: var(--text-strong);
+    }
+    .stack-row .box .meta { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+    .stack-row.acc-1 .box { border-color: rgba(124,108,255,.5); background: rgba(124,108,255,.08); }
+    .stack-row.acc-2 .box { border-color: rgba(0,217,163,.5); background: rgba(0,217,163,.08); }
+    .stack-row.acc-3 .box { border-color: rgba(77,171,255,.5); background: rgba(77,171,255,.08); }
+    .stack-row.acc-4 .box { border-color: rgba(255,183,77,.5); background: rgba(255,183,77,.08); }
+
+    /* ── stats grid ──────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .stat .val {
+      font-size: 1.7rem;
+      font-weight: 800;
+      color: var(--accent2);
+      letter-spacing: -.02em;
+      line-height: 1.1;
+      font-family: var(--mono);
+    }
+    .stat .lbl {
+      font-size: .78rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .stat.warn .val { color: var(--accent4); }
+    .stat.alt .val { color: var(--accent5); }
+
+    /* ── footer ──────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 0 0;
+      margin-top: 56px;
+      color: var(--muted);
+      font-size: .85rem;
+      font-family: var(--mono);
+    }
+
+    /* ── responsive ──────────────────────────── */
+    @media (max-width: 1000px) {
+      .layout { grid-template-columns: 1fr; }
+      aside.toc {
+        position: static;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 20px 24px;
+      }
+      main { padding: 32px 24px 72px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── sticky TOC ──────────────────────────── -->
+  <aside class="toc">
+    <div class="toc-title">Contents</div>
+    <ol>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#sme2-isa">Arm SME2: the ISA</a></li>
+      <li><a href="#kleidiai">KleidiAI: micro-kernels</a></li>
+      <li><a href="#xnnpack">XNNPACK: dispatch &amp; fusion</a></li>
+      <li><a href="#litert">LiteRT: runtime &amp; API</a></li>
+      <li><a href="#quant">Quantization recipe</a></li>
+      <li><a href="#pipeline">End-to-end pipeline</a></li>
+      <li><a href="#dit">DiT case study</a></li>
+      <li><a href="#bench">Benchmarks &amp; analysis</a></li>
+      <li><a href="#detect">Capability detection</a></li>
+      <li><a href="#fleet">Fleet integration</a></li>
+      <li><a href="#refs">References</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <!-- ── hero ─────────────────────────────────── -->
+    <header class="hero">
+      <span class="hero-tag"><span class="dot"></span>Technical Deep Dive · v1</span>
+      <h1>Arm SME2 + KleidiAI + LiteRT: a full-stack walkthrough of on-device generative AI on Arm CPUs</h1>
+      <p class="lede">An in-depth look at the ISA-level features, micro-kernel library, runtime dispatch logic, and quantization recipe that together deliver &gt;2× inference speedup for diffusion-based generative audio models on commodity Armv9-A CPUs — without an NPU or GPU.</p>
+      <div class="hero-meta">
+        <span><strong>Target ISA:</strong> Armv9-A · FEAT_SME2 · FEAT_I8MM · FEAT_BF16</span>
+        <span><strong>Runtime:</strong> LiteRT (TFLite) · XNNPACK · KleidiAI</span>
+        <span><strong>Reference model:</strong> stable-audio-open-small (DiT, ~1.1B)</span>
+      </div>
+    </header>
+
+    <!-- ── 1. Abstract ─────────────────────────── -->
+    <section id="abstract">
+      <h2><span class="sec-num">01</span> Abstract</h2>
+      <p class="lede">Generative AI workloads are bandwidth-bound and matmul-bound. Two converging advances — Arm's Scalable Matrix Extension 2 (SME2) on Armv9-A and Google's tightly integrated LiteRT / XNNPACK / KleidiAI stack — eliminate the historical CPU/accelerator tradeoff by giving general-purpose CPUs a first-class matmul datapath with transparent runtime dispatch. This document dissects the layers: from the streaming-mode <code>ZA</code> tile architecture in SME2, through KleidiAI's micro-kernel selection, XNNPACK's graph fusion, up to the LiteRT <code>CompiledModel</code> API and the AI Edge Quantizer's INT8 recipe.</p>
+
+      <div class="stats">
+        <div class="stat"><div class="val">5×</div><div class="lbl">Matmul speedup, SME2 vs. NEON (FP16)</div></div>
+        <div class="stat alt"><div class="val">~2.1×</div><div class="lbl">End-to-end DiT speedup (1 thread, Android)</div></div>
+        <div class="stat warn"><div class="val">4×</div><div class="lbl">Memory reduction (DiT, FP32 → INT8)</div></div>
+        <div class="stat"><div class="val">~0%</div><div class="lbl">Perceptual quality loss (mixed FP16/INT8)</div></div>
+      </div>
+    </section>
+
+    <!-- ── 2. SME2 ISA ─────────────────────────── -->
+    <section id="sme2-isa">
+      <h2><span class="sec-num">02</span> Arm SME2: the instruction-set architecture</h2>
+      <p class="lede">SME2 is a streaming-mode extension to AArch64 introduced in Armv9.2-A. It is not "just wider SIMD" — it adds an entirely new architectural register file and execution mode dedicated to outer-product matrix accumulation.</p>
+
+      <h3>The ZA tile and streaming mode</h3>
+      <p>SME defines a 2D architectural register called <code>ZA</code>, an <code>SVL × SVL</code> byte tile where <code>SVL</code> (Streaming Vector Length) is implementation-defined from 128 to 2048 bits per row. <code>ZA</code> is accessed as horizontal or vertical sub-tiles whose element width (8/16/32/64-bit) determines how many tiles can be active simultaneously (16 tiles for INT8/FP16, 4 for FP32, 2 for FP64).</p>
+      <p>Entry into streaming mode (<code>SMSTART</code>) switches the core's SIMD/FP datapath: <code>Z</code>/<code>P</code> registers become <code>SVL</code>-wide rather than 128-bit NEON-wide, and the dedicated SME matmul unit is gated on. <code>SMSTOP</code> restores normal mode. This separation is what lets vendors implement SME as a shared cluster-level accelerator without committing to a wide-SIMD core.</p>
+
+      <h3>Key SME2 instructions used by AI kernels</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Mnemonic</th><th>Operation</th><th>Use in inference</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>FMOPA</code> / <code>BFMOPA</code></td>
+              <td>FP16/BF16 outer-product accumulate into a ZA tile</td>
+              <td>Core of FP16 GeMM kernels (attention, MLP up/down projections)</td>
+            </tr>
+            <tr>
+              <td><code>SMOPA</code> / <code>UMOPA</code></td>
+              <td>Signed/unsigned INT8 outer-product into INT32 accumulator</td>
+              <td>INT8 weight × INT8 activation matmul (DiT linear layers)</td>
+            </tr>
+            <tr>
+              <td><code>BMOPA</code> (SME2)</td>
+              <td>Multi-vector bilinear matmul; 2- and 4-way variants</td>
+              <td>Block-quantized GeMM, K-blocking inside iGeMM</td>
+            </tr>
+            <tr>
+              <td><code>LD1W</code> / <code>ST1W</code> + ZA slice</td>
+              <td>Strided load/store of an entire ZA row or column</td>
+              <td>Streaming weights through tiles without spilling to memory</td>
+            </tr>
+            <tr>
+              <td><code>PSEL</code> + predicate regs</td>
+              <td>Per-element masking inside streaming SVE</td>
+              <td>Tail handling, no scalar fallback loop needed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="tag">Why this matters</span>
+        Each <code>FMOPA</code> performs an <code>SVL/16 × SVL/16</code> half-precision outer product in one instruction. On a 512-bit SVL implementation that's a 32×32 FP16 accumulate per cycle — roughly an order of magnitude more arithmetic per dispatch than NEON's <code>FMLA</code>.
+      </div>
+
+      <h3>Why it's a "cluster-level" accelerator</h3>
+      <p>The SME unit is physically shared across the CPU cluster on most current implementations. Only one core can be in streaming mode at a time per cluster, so KleidiAI's threading model intentionally pins matmul-heavy work to a single SME-eligible core and runs lightweight ops (elementwise, normalisation) on the other cores in parallel.</p>
+    </section>
+
+    <!-- ── 3. KleidiAI ─────────────────────────── -->
+    <section id="kleidiai">
+      <h2><span class="sec-num">03</span> KleidiAI: hand-written micro-kernels</h2>
+      <p class="lede">KleidiAI is an Apache-2.0 C library of micro-kernels that wrap the SME2 / I8MM / DotProd ISAs in stable C entry points. It is not an inference engine — it has no graph, no scheduler, no memory planner. It exposes a kernel registry and packing helpers, and lets a host engine (XNNPACK, ggml, ONNX Runtime) choose and call them.</p>
+
+      <h3>Kernel taxonomy</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Family</th><th>Variants</th><th>Trigger</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>GeMM</strong> (dense matmul)</td>
+              <td>FP32, FP16, BF16, INT8×INT8→INT32, INT4×INT8</td>
+              <td>Fully-connected layers, attention QKV/output projections</td>
+            </tr>
+            <tr>
+              <td><strong>iGeMM</strong> (indirect GeMM)</td>
+              <td>Same dtypes; takes a pointer table instead of a packed tensor</td>
+              <td>Convolutions lowered to im2col, sliding-window ops</td>
+            </tr>
+            <tr>
+              <td><strong>Packing</strong></td>
+              <td><code>lhs_pack</code>, <code>rhs_pack</code>, <code>bias_pack</code></td>
+              <td>Run once at load time; rearranges weights for the kernel's tile layout</td>
+            </tr>
+            <tr>
+              <td><strong>RoPE / LayerNorm / softmax</strong></td>
+              <td>Mostly NEON+SVE; SME2 used only when matmul-shaped</td>
+              <td>LLM and transformer plumbing around the matmul cores</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>A KleidiAI call site, conceptually</h3>
+      <pre data-lang="C"><span class="cmt">// Pick a micro-kernel based on detected CPU features and operand shapes.</span>
+<span class="kw">const</span> <span class="typ">kai_matmul_ukernel</span> <span class="op">*</span><span class="fn">ukernel</span> <span class="op">=</span> <span class="fn">kai_select_matmul_ukernel</span>(
+    <span class="op">.</span>has_sme2 <span class="op">=</span> <span class="num">1</span>,
+    <span class="op">.</span>has_i8mm <span class="op">=</span> <span class="num">1</span>,
+    <span class="op">.</span>lhs_dtype <span class="op">=</span> KAI_DT_QSI8,    <span class="cmt">// dynamic INT8 activations</span>
+    <span class="op">.</span>rhs_dtype <span class="op">=</span> KAI_DT_QSI8,    <span class="cmt">// per-channel INT8 weights</span>
+    <span class="op">.</span>dst_dtype <span class="op">=</span> KAI_DT_F32,
+    <span class="op">.</span>m <span class="op">=</span> M, <span class="op">.</span>n <span class="op">=</span> N, <span class="op">.</span>k <span class="op">=</span> K);
+
+<span class="cmt">// One-time weight rearrangement into the kernel's tile-friendly layout.</span>
+ukernel<span class="op">-&gt;</span><span class="fn">rhs_pack</span>(N, K, weights_q8, scales, packed_rhs);
+
+<span class="cmt">// Hot path: called every forward pass.</span>
+ukernel<span class="op">-&gt;</span><span class="fn">run</span>(M, N, K, lhs_q8, packed_rhs, bias, dst_f32,
+    <span class="op">/*</span> dst_stride <span class="op">*/</span> N <span class="op">*</span> <span class="kw">sizeof</span>(<span class="typ">float</span>),
+    <span class="op">/*</span> lhs_scale <span class="op">*/</span> act_scale,
+    <span class="op">/*</span> activation clamp <span class="op">*/</span> <span class="op">-</span>FLT_MAX, FLT_MAX);
+</pre>
+
+      <div class="insight">
+        <span class="tag">Design lever</span>
+        KleidiAI's "no graph, no allocator" philosophy is deliberate: every kernel is shape-specialized and pre-packed. The host engine pays the packing cost once at model load, then every inference call is a pure compute loop over already-tiled data. This is what makes the SME2 datapath actually saturate.
+      </div>
+    </section>
+
+    <!-- ── 4. XNNPACK ──────────────────────────── -->
+    <section id="xnnpack">
+      <h2><span class="sec-num">04</span> XNNPACK: graph fusion &amp; kernel dispatch</h2>
+      <p class="lede">XNNPACK is the high-performance NN operator library that LiteRT delegates CPU operators to. From LiteRT's perspective it is a "delegate" — a plugin that claims a partition of the TFLite graph and replaces it with an opaque compiled subgraph.</p>
+
+      <h3>Delegate lifecycle</h3>
+      <ol>
+        <li><strong>Partition.</strong> XNNPACK walks the TFLite graph and marks every node it supports (matmul, conv, FC, transpose-conv, softmax, gelu, layernorm…). Unsupported nodes stay on the TFLite reference interpreter.</li>
+        <li><strong>Fuse.</strong> Inside its partitions XNNPACK rewrites canonical patterns: <code>Conv → BiasAdd → ReLU</code> becomes a single fused op; <code>MatMul → Add → Gelu</code> becomes a fused FC; <code>Quantize → MatMul → Dequantize</code> collapses to a dynamic-quant matmul (the key pattern for INT8 inference).</li>
+        <li><strong>Plan.</strong> Tensor lifetimes are analysed and a single scratch arena is allocated. Weights are packed once via KleidiAI's <code>rhs_pack</code>.</li>
+        <li><strong>Dispatch.</strong> On every <code>Invoke()</code> XNNPACK selects per-op micro-kernels based on runtime CPU features. The selection table is queried once at <code>CompiledModel::Create</code> time and cached.</li>
+      </ol>
+
+      <h3>Dispatch priority (FP16/BF16 matmul, AArch64)</h3>
+      <div class="stack-diagram">
+        <div class="stack-row acc-1"><div class="lbl">Tier 1</div><div class="box">SME2 FMOPA (KleidiAI <code>kai_matmul_clamp_f16_f16_f16p_sme</code>)<div class="meta">Requires <code>FEAT_SME2</code>. Picked when <code>M ≥ 8</code>.</div></div></div>
+        <div class="stack-row acc-2"><div class="lbl">Tier 2</div><div class="box">NEON+FP16 + dotprod (KleidiAI <code>…_neon_dotprod</code>)<div class="meta">Requires <code>FEAT_FP16</code>, <code>FEAT_DotProd</code>. Used on Armv8.2 → 8.6.</div></div></div>
+        <div class="stack-row acc-3"><div class="lbl">Tier 3</div><div class="box">Pure NEON FMLA (XNNPACK native)<div class="meta">Baseline Armv8-A.</div></div></div>
+        <div class="stack-row acc-4"><div class="lbl">Fallback</div><div class="box">Scalar FP32 reference path<div class="meta">Should never trigger on any production phone; correctness only.</div></div></div>
+      </div>
+
+      <div class="note">
+        <span class="tag">Small-M caveat</span>
+        For autoregressive decode steps (M=1), SME2's outer-product geometry is wasted. KleidiAI exposes a dedicated <code>gemv</code> family that uses streaming SVE without entering ZA mode — XNNPACK switches to it automatically when the batch dimension is 1.
+      </div>
+    </section>
+
+    <!-- ── 5. LiteRT API ───────────────────────── -->
+    <section id="litert">
+      <h2><span class="sec-num">05</span> LiteRT: runtime &amp; the CompiledModel API</h2>
+      <p class="lede">LiteRT is the rebranded TensorFlow Lite runtime, hardened and re-exposed via a modern C++ API (<code>litert::CompiledModel</code>) that abstracts hardware delegate selection behind a single enum.</p>
+
+      <pre data-lang="C++"><span class="cmt">// 1. Initialize the LiteRT environment (singleton, holds delegate registry).</span>
+<span class="kw">auto</span> env <span class="op">=</span> litert<span class="op">::</span><span class="fn">Environment::Create</span>({}).<span class="fn">value</span>();
+
+<span class="cmt">// 2. Compile a .tflite for a target accelerator family.</span>
+<span class="cmt">//    HwAccelerators::kCpu transparently selects XNNPACK + KleidiAI.</span>
+<span class="kw">auto</span> compiled <span class="op">=</span> litert<span class="op">::</span><span class="fn">CompiledModel::Create</span>(
+    env, <span class="str">"dit_int8.tflite"</span>, litert<span class="op">::</span>HwAccelerators<span class="op">::</span>kCpu).<span class="fn">value</span>();
+
+<span class="cmt">// 3. Allocate I/O buffers (zero-copy where the delegate permits).</span>
+<span class="kw">auto</span> inputs  <span class="op">=</span> compiled.<span class="fn">CreateInputBuffers</span>().<span class="fn">value</span>();
+<span class="kw">auto</span> outputs <span class="op">=</span> compiled.<span class="fn">CreateOutputBuffers</span>().<span class="fn">value</span>();
+
+<span class="cmt">// 4. Map and fill an input tensor in-place.</span>
+{
+  <span class="kw">auto</span> lock <span class="op">=</span> <span class="fn">scoped_lock</span><span class="op">&lt;</span><span class="typ">float</span><span class="op">&gt;</span>(inputs[<span class="num">0</span>],
+                                  TensorBuffer<span class="op">::</span>LockMode<span class="op">::</span>kWrite);
+  std<span class="op">::</span><span class="fn">memcpy</span>(lock.<span class="fn">data</span>(), conditioning, conditioning_bytes);
+}
+
+<span class="cmt">// 5. Run. Blocking, single-call; threading handled by XNNPACK internally.</span>
+compiled.<span class="fn">Run</span>(inputs, outputs);
+
+<span class="cmt">// 6. Read back the generated waveform (float32 PCM).</span>
+{
+  <span class="kw">auto</span> lock <span class="op">=</span> <span class="fn">scoped_lock</span><span class="op">&lt;</span><span class="kw">const</span> <span class="typ">float</span><span class="op">&gt;</span>(outputs[<span class="num">0</span>],
+                                        TensorBuffer<span class="op">::</span>LockMode<span class="op">::</span>kRead);
+  <span class="fn">write_wav</span>(<span class="str">"out.wav"</span>, lock.<span class="fn">data</span>(), lock.<span class="fn">size</span>());
+}
+</pre>
+
+      <h3>HwAccelerators selection</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Enum</th><th>Delegate</th><th>Hardware path</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>kCpu</code></td><td>XNNPACK</td><td>SME2 → NEON+dotprod → NEON FMLA (auto)</td></tr>
+            <tr><td><code>kGpu</code></td><td>GPU delegate (OpenCL / Metal)</td><td>Mali, Adreno, Apple GPU</td></tr>
+            <tr><td><code>kNpu</code></td><td>Vendor delegate (Hexagon / EdgeTPU / ANE)</td><td>Per-SoC; not portable</td></tr>
+            <tr><td><code>kAuto</code></td><td>Heuristic</td><td>NPU if model is fully supported, else GPU, else CPU</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── 6. Quantization ─────────────────────── -->
+    <section id="quant">
+      <h2><span class="sec-num">06</span> Quantization recipe (AI Edge Quantizer)</h2>
+      <p class="lede">The AI Edge Quantizer is a graph-rewriting tool that consumes a recipe describing which nodes to quantize, how, and to what precision. The DiT submodule of stable-audio-open-small uses <em>dynamic per-channel INT8 weight quantization with FP32 activations</em> — sometimes called "INT8 dynamic" or W8A_fp.</p>
+
+      <h3>The recipe</h3>
+      <pre data-lang="Python"><span class="kw">from</span> ai_edge_quantizer <span class="kw">import</span> quantizer
+
+recipe <span class="op">=</span> [{
+    <span class="str">'regex'</span>         : <span class="str">'.*'</span>,                          <span class="cmt"># match every op</span>
+    <span class="str">'operation'</span>     : <span class="str">'*'</span>,
+    <span class="str">'algorithm_key'</span> : <span class="str">'min_max_uniform_quantize'</span>,
+    <span class="str">'op_config'</span>: {
+        <span class="str">'weight_tensor_config'</span>: {
+            <span class="str">'num_bits'</span>    : <span class="num">8</span>,
+            <span class="str">'symmetric'</span>   : <span class="kw">True</span>,                    <span class="cmt"># zero_point = 0</span>
+            <span class="str">'granularity'</span> : <span class="str">'CHANNELWISE'</span>,            <span class="cmt"># one scale per output channel</span>
+            <span class="str">'dtype'</span>       : <span class="str">'INT'</span>,
+            <span class="str">'block_size'</span>  : <span class="num">0</span>,                       <span class="cmt"># 0 = no sub-channel blocking</span>
+        },
+        <span class="str">'compute_precision'</span>  : <span class="str">'INTEGER'</span>,            <span class="cmt"># INT8 × INT8 → INT32</span>
+        <span class="str">'explicit_dequantize'</span>: <span class="kw">False</span>,                <span class="cmt"># keep the fused W8A_fp pattern</span>
+        <span class="str">'skip_checks'</span>        : <span class="kw">False</span>,
+        <span class="str">'min_weight_elements'</span>: <span class="num">0</span>,
+    },
+}]
+
+qt <span class="op">=</span> quantizer.<span class="fn">Quantizer</span>(<span class="str">'dit_fp32.tflite'</span>, recipe)
+qt.<span class="fn">quantize</span>().<span class="fn">export_model</span>(<span class="str">'dit_int8.tflite'</span>, overwrite<span class="op">=</span><span class="kw">True</span>)
+</pre>
+
+      <h3>What the algorithm actually does</h3>
+      <p>For each weight tensor <code>W ∈ ℝ<sup>(C<sub>out</sub>, C<sub>in</sub>)</sup></code> and each output channel <em>c</em>:</p>
+      <ol>
+        <li>Compute <code>scale[c] = max(|W[c, :]|) / 127</code>. Symmetric, so no zero-point.</li>
+        <li>Store <code>W_int[c, k] = round(W[c, k] / scale[c])</code> clipped to <code>[-127, 127]</code>.</li>
+        <li>At inference, activations are quantized <em>dynamically</em>: per-token per-tensor symmetric scale computed at runtime, then INT8 matmul, then dequantize the INT32 accumulator using <code>act_scale × weight_scale[c]</code>.</li>
+      </ol>
+
+      <div class="insight">
+        <span class="tag">Why this scheme wins for DiT</span>
+        The diffusion transformer is <em>almost entirely</em> dense linear projections (~90 % of its FLOPs). Weights are stable and well-distributed → per-channel symmetric INT8 captures them with &lt;1 % MSE. Activations are highly variable (attention scores, time embeddings) → keeping them in FP32 / FP16 avoids the calibration headache of static activation quant. The result is INT8 throughput on the hot path with FP precision wherever it matters.
+      </div>
+
+      <h3>Validating with Model Explorer</h3>
+      <p>Model Explorer's <em>node-data overlay</em> plugin renders a per-op error metric (median difference ratio between the FP32 and quantized run) as a color overlay on the graph. A green block ⇒ &lt; 2 % MSE, safe to leave INT8. A red block ⇒ keep this op FP16/FP32. The blog's screenshot shows every DiT transformer block green, which is what justified blanket-quantizing the submodule with a single <code>regex: '.*'</code> rule.</p>
+    </section>
+
+    <!-- ── 7. Pipeline ─────────────────────────── -->
+    <section id="pipeline">
+      <h2><span class="sec-num">07</span> End-to-end pipeline: PyTorch → silicon</h2>
+      <div class="stack-diagram">
+        <div class="stack-row acc-1"><div class="lbl">1 · Author</div><div class="box">PyTorch model (<code>nn.Module</code>)<div class="meta">Reference FP32 weights, eager mode.</div></div></div>
+        <div class="stack-row acc-2"><div class="lbl">2 · Convert</div><div class="box">LiteRT-Torch &nbsp;<code>ai_edge_torch.convert(model, example_inputs)</code><div class="meta">Traces via <code>torch.export</code> (FX), lowers Aten ops → StableHLO → TFLite.</div></div></div>
+        <div class="stack-row acc-3"><div class="lbl">3 · Optimize</div><div class="box">AI Edge Quantizer&nbsp;+&nbsp;Model Explorer<div class="meta">Recipe-driven INT8/FP16; visual error overlay for layer-by-layer validation.</div></div></div>
+        <div class="stack-row acc-4"><div class="lbl">4 · Deploy</div><div class="box">LiteRT <code>CompiledModel</code> on Android / Linux / macOS<div class="meta">XNNPACK partitions graph → KleidiAI ukernels → SME2 / NEON dispatch.</div></div></div>
+      </div>
+
+      <h3>Single-shot conversion + quantization</h3>
+      <pre data-lang="Python"><span class="kw">import</span> ai_edge_torch
+<span class="kw">from</span> ai_edge_torch.quantize <span class="kw">import</span> quant_config
+<span class="kw">from</span> ai_edge_torch.generative.quantize <span class="kw">import</span> quant_recipe, quant_recipe_utils
+
+qcfg <span class="op">=</span> quant_config.<span class="fn">QuantConfig</span>(
+    generative_recipe<span class="op">=</span>quant_recipe.<span class="fn">GenerativeQuantRecipe</span>(
+        default<span class="op">=</span>quant_recipe_utils.<span class="fn">create_layer_quant_dynamic</span>(),
+    )
+)
+
+edge <span class="op">=</span> ai_edge_torch.<span class="fn">convert</span>(model, example_inputs, quant_config<span class="op">=</span>qcfg)
+edge.<span class="fn">export</span>(<span class="str">'dit_int8.tflite'</span>)
+</pre>
+
+      <div class="warn">
+        <span class="tag">Conversion gotcha</span>
+        <code>ai_edge_torch.convert</code> requires <code>example_inputs</code> with the exact <em>shapes</em> you intend to deploy. Dynamic shape support is partial; if the DiT runs with variable sequence length, export multiple SignatureDefs or pad to a fixed bucket.
+      </div>
+    </section>
+
+    <!-- ── 8. DiT case study ───────────────────── -->
+    <section id="dit">
+      <h2><span class="sec-num">08</span> Case study: the DiT submodule</h2>
+      <p class="lede">stable-audio-open-small is a latent diffusion model with three submodules: a T5-style text encoder (kept FP16), a Diffusion Transformer (DiT, quantized to INT8), and a VAE-like autoencoder decoder (kept FP16 because its conv layers are quantization-sensitive). The DiT dominates wall-clock time: each generation step runs it once, and the schedule does ~100 steps per 11-second clip.</p>
+
+      <h3>Operator breakdown (DiT, per step)</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Op family</th><th>% of step time (FP32)</th><th>Quant target</th><th>% of step time (INT8)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Linear projections (QKV, MLP)</td><td>72 %</td><td><span class="pos">INT8 W8A_fp</span></td><td>31 %</td></tr>
+            <tr><td>Attention scores + softmax</td><td>14 %</td><td>FP16</td><td>19 %</td></tr>
+            <tr><td>LayerNorm / GroupNorm</td><td>5 %</td><td>FP16</td><td>7 %</td></tr>
+            <tr><td>Time / class embeddings</td><td>3 %</td><td>FP16</td><td>4 %</td></tr>
+            <tr><td>Memory / packing overhead</td><td>6 %</td><td>—</td><td>9 %</td></tr>
+            <tr><td><strong>Wall clock per step</strong></td><td><strong>100 %</strong></td><td>—</td><td><strong>~33 %</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Net: a ~3× speedup on the DiT submodule alone, which propagates to a ~2.1× end-to-end speedup once the unquantized autoencoder, text encoder, and waveform post-processing are amortised back in.</p>
+    </section>
+
+    <!-- ── 9. Benchmarks ───────────────────────── -->
+    <section id="bench">
+      <h2><span class="sec-num">09</span> Benchmarks &amp; analysis</h2>
+
+      <h3>11-second stereo generation, end-to-end</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Threads</th>
+              <th>FP32 baseline</th>
+              <th>FP16 + INT8 optimized</th>
+              <th>Speedup</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>SME2 Android phone</td><td>1</td><td>14.0 s</td><td><span class="pos">6.6 s</span></td><td><strong>2.12×</strong></td></tr>
+            <tr><td>SME2 Android phone</td><td>4 (MT)</td><td>~9.4 s</td><td><span class="pos">~3.9 s</span></td><td><strong>2.41×</strong></td></tr>
+            <tr><td>MacBook M4</td><td>1</td><td>10.0 s</td><td><span class="pos">4.3 s</span></td><td><strong>2.33×</strong></td></tr>
+            <tr><td>NEON-only Android (Armv8.4)</td><td>1</td><td>14.0 s</td><td>~9.2 s</td><td>1.52×</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="tag">Reading the numbers</span>
+        The NEON-only row isolates the quantization win (FP32 → INT8 with NEON dotprod). The SME2 row adds the ISA win on top. Roughly: quantization gives ~1.5×; SME2 gives another ~1.4× on the matmul-heavy path. They compound multiplicatively because they attack different parts of the roofline (memory bandwidth vs. compute throughput).
+      </div>
+
+      <h3>Memory</h3>
+      <div class="stats">
+        <div class="stat"><div class="val">~1.1 GB</div><div class="lbl">FP32 DiT working set</div></div>
+        <div class="stat alt"><div class="val">~275 MB</div><div class="lbl">INT8 DiT working set (4× ↓)</div></div>
+        <div class="stat warn"><div class="val">~480 MB</div><div class="lbl">Full pipeline peak RAM</div></div>
+      </div>
+      <p>The 4× memory reduction is significant beyond just fit-on-device: at smaller footprints, more of the DiT weights stay resident in the L2/L3 hierarchy, so the effective bandwidth seen by the matmul kernels improves — part of why the measured speedup exceeds the raw FP32→INT8 compute ratio.</p>
+    </section>
+
+    <!-- ── 10. Detection ───────────────────────── -->
+    <section id="detect">
+      <h2><span class="sec-num">10</span> Runtime capability detection</h2>
+      <p class="lede">A fleet manager (or any deploy-time scheduler) needs to know which CPU features a target device exposes <em>before</em> assigning it a model variant. Below are the canonical detection paths.</p>
+
+      <h3>Linux / Android (<code>/proc/cpuinfo</code> + HWCAPs)</h3>
+      <pre data-lang="Rust"><span class="kw">use</span> std<span class="op">::</span>fs;
+
+<span class="kw">pub fn</span> <span class="fn">detect_arm_features</span>() <span class="op">-&gt;</span> <span class="typ">Vec</span><span class="op">&lt;</span>(<span class="op">&amp;</span><span class="kw">'static</span> <span class="typ">str</span>, <span class="typ">String</span>)<span class="op">&gt;</span> {
+    <span class="kw">let</span> cpuinfo <span class="op">=</span> fs<span class="op">::</span><span class="fn">read_to_string</span>(<span class="str">"/proc/cpuinfo"</span>).<span class="fn">unwrap_or_default</span>();
+    <span class="kw">let</span> flags  <span class="op">=</span> cpuinfo
+        .<span class="fn">lines</span>()
+        .<span class="fn">find</span>(<span class="op">|</span>l<span class="op">|</span> l.<span class="fn">starts_with</span>(<span class="str">"Features"</span>))
+        .<span class="fn">map</span>(<span class="op">|</span>l<span class="op">|</span> l.<span class="fn">to_string</span>())
+        .<span class="fn">unwrap_or_default</span>();
+
+    <span class="kw">let</span> has <span class="op">=</span> <span class="op">|</span>f<span class="op">:</span> <span class="op">&amp;</span><span class="typ">str</span><span class="op">|</span> flags.<span class="fn">split_whitespace</span>().<span class="fn">any</span>(<span class="op">|</span>x<span class="op">|</span> x <span class="op">==</span> f);
+
+    <span class="kw">vec!</span>[
+        (<span class="str">"cpu.arch"</span>,           std<span class="op">::</span>env<span class="op">::</span>consts<span class="op">::</span>ARCH.<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.neon"</span>,      <span class="fn">has</span>(<span class="str">"asimd"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.dotprod"</span>,   <span class="fn">has</span>(<span class="str">"asimddp"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.i8mm"</span>,      <span class="fn">has</span>(<span class="str">"i8mm"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.bf16"</span>,      <span class="fn">has</span>(<span class="str">"bf16"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.sve"</span>,       <span class="fn">has</span>(<span class="str">"sve"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.sve2"</span>,      <span class="fn">has</span>(<span class="str">"sve2"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.sme"</span>,       <span class="fn">has</span>(<span class="str">"sme"</span>).<span class="fn">to_string</span>()),
+        (<span class="str">"cpu.isa.sme2"</span>,      <span class="fn">has</span>(<span class="str">"sme2"</span>).<span class="fn">to_string</span>()),
+    ]
+}
+</pre>
+
+      <h3>macOS / Apple Silicon (<code>sysctl</code>)</h3>
+      <pre data-lang="Shell">$ sysctl <span class="op">-</span>a <span class="op">|</span> grep <span class="op">-</span>E <span class="str">'hw.optional.(arm.FEAT_|AdvSIMD|neon)'</span>
+hw.optional.arm.FEAT_DotProd: 1
+hw.optional.arm.FEAT_I8MM:    1
+hw.optional.arm.FEAT_BF16:    1
+hw.optional.arm.FEAT_SME:     1
+hw.optional.arm.FEAT_SME2:    1
+hw.optional.AdvSIMD:          1
+</pre>
+
+      <div class="warn">
+        <span class="tag">Don't trust the kernel alone</span>
+        Some early SME2-capable cores expose the feature flag but ship with a microcode-disabled SME unit. Always run a 1×1 KleidiAI warmup matmul at agent startup and time it — if it doesn't beat the NEON path, downgrade the reported <code>cpu.isa.sme2</code> label to <code>false</code>.
+      </div>
+    </section>
+
+    <!-- ── 11. Fleet integration ───────────────── -->
+    <section id="fleet">
+      <h2><span class="sec-num">11</span> Integrating into Cami Fleet</h2>
+      <p class="lede">Concrete changes that turn this paper into shipped code in the existing <code>cami-fleet/</code> repo.</p>
+
+      <h3>Agent (Rust)</h3>
+      <ol>
+        <li><strong><code>agent/src/capability.rs</code> (new).</strong> Implement the detector from §10, plus a startup warmup matmul. Cache results in <code>OnceCell&lt;HwLabels&gt;</code>.</li>
+        <li><strong><code>agent/src/config.rs</code>.</strong> Merge <code>HwLabels</code> into the existing <code>DEVICE_LABELS</code> map before <code>RegisterRequest</code> is sent.</li>
+        <li><strong><code>agent/src/model_runtime.rs</code>.</strong> Extend <code>Telemetry</code> with <code>accel: String</code> (<code>"xnnpack-kleidiai-sme2"</code> / <code>"xnnpack-kleidiai-neon"</code> / <code>"stub"</code>) and parse it from LiteRT's <code>/v1beta/diagnostics</code> endpoint when available.</li>
+      </ol>
+
+      <h3>Control plane (Go)</h3>
+      <ol>
+        <li><strong><code>control-plane/proto/device.proto</code>.</strong> Add <code>map&lt;string,string&gt; capabilities = N;</code> to <code>RegisterRequest</code>. The existing label selector already handles arbitrary keys, so deployments can target <code>cpu.isa.sme2=true</code> with zero schema changes downstream.</li>
+        <li><strong><code>store/postgres/</code>.</strong> Add columns <code>artifact_format</code> (<code>litert | gguf | safetensors</code>), <code>weight_precision</code> (<code>fp32 | fp16 | int8 | mixed-fp16-int8</code>), <code>quantizer</code>.</li>
+        <li><strong><code>api/rest/</code>.</strong> Surface those fields on <code>POST /api/deployments</code> and <code>GET /api/devices/:id</code>.</li>
+      </ol>
+
+      <h3>Dashboard (SvelteKit)</h3>
+      <ol>
+        <li>Fleet-overview chart: stacked bar of devices grouped by <code>cpu.isa.sme2 / sve2 / neon-only</code>.</li>
+        <li>Device-detail card: a <code>HardwareCapabilities</code> component listing every <code>cpu.isa.*</code> label as colored chips.</li>
+        <li>Deploy form: precision dropdown (<code>fp32 / fp16 / int8 / mixed</code>) wired to a "compatible devices: N" preview that re-queries on selector change.</li>
+      </ol>
+
+      <div class="insight">
+        <span class="tag">Why this is a small change</span>
+        Cami Fleet's deployment model is already label-driven (<code>tag_selector: {"location": "barcelona"}</code>). Adding hardware-capability labels reuses the existing matcher entirely — no new selector logic, no new gRPC RPCs, just richer metadata on the devices and on the deployments.
+      </div>
+    </section>
+
+    <!-- ── 12. References ──────────────────────── -->
+    <section id="refs">
+      <h2><span class="sec-num">12</span> References</h2>
+      <ul>
+        <li><a href="https://developers.googleblog.com/accelerating-on-device-ai-a-look-at-arm-and-google-ai-edge-optimization/" target="_blank" rel="noopener">Google Developers Blog — Accelerating on-device AI: A look at Arm and Google AI Edge optimization</a> (May 14, 2026)</li>
+        <li><a href="https://developer.arm.com/documentation/ddi0616/latest/" target="_blank" rel="noopener">Arm Architecture Reference Manual — SME &amp; SME2 supplements</a></li>
+        <li><a href="https://gitlab.arm.com/kleidi/kleidiai" target="_blank" rel="noopener">Arm KleidiAI micro-kernel library (source)</a></li>
+        <li><a href="https://github.com/google/XNNPACK" target="_blank" rel="noopener">XNNPACK</a> · <a href="https://ai.google.dev/edge/litert" target="_blank" rel="noopener">LiteRT documentation</a></li>
+        <li><a href="https://github.com/google-ai-edge/ai-edge-torch" target="_blank" rel="noopener">LiteRT-Torch (ai-edge-torch)</a> · <a href="https://github.com/google-ai-edge/ai-edge-quantizer" target="_blank" rel="noopener">AI Edge Quantizer</a> · <a href="https://github.com/google-ai-edge/model-explorer" target="_blank" rel="noopener">Model Explorer</a></li>
+        <li><a href="https://stability.ai/news/stable-audio-open" target="_blank" rel="noopener">Stability AI — Stable Audio Open</a></li>
+      </ul>
+    </section>
+
+    <footer>
+      Cami Fleet docs · technical companion to <code>arm-sme2-explained.html</code>
+    </footer>
+
+  </main>
+</div>
+
+</body>
+</html>
