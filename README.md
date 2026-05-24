@@ -1,7 +1,7 @@
 # Cami Fleet
 
-[![CI](https://github.com/<your-org>/cami-fleet/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-org>/cami-fleet/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](cami-fleet/LICENSE)
+[![CI](https://github.com/madosh/EDGE-LLM/actions/workflows/ci.yml/badge.svg)](https://github.com/madosh/EDGE-LLM/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go 1.23](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00.svg)](https://kit.svelte.dev)
@@ -126,8 +126,8 @@ graph TB
 ## Quick Start
 
 ```bash
-git clone https://github.com/<your-org>/cami-fleet.git
-cd cami-fleet
+git clone https://github.com/madosh/EDGE-LLM.git
+cd EDGE-LLM
 cp .env.example .env
 docker compose up --build
 ```
@@ -169,7 +169,6 @@ The agent supports three runtime backends, selected via `RUNTIME_BACKEND` or aut
 ## Project Structure
 
 ```
-cami-fleet/
 ├── .github/workflows/ci.yml    CI pipeline (Go, Rust, Web, Docker)
 ├── docker-compose.yml           Full stack orchestration
 ├── Makefile                     Dev shortcuts
@@ -199,6 +198,7 @@ cami-fleet/
 │       ├── deployments/         Deploy form + history
 │       └── devices/[id]/        Device detail + telemetry
 │
+├── monitoring/                  Prometheus + Grafana dashboards
 ├── scripts/gen-certs.sh         mTLS certificate generation
 ├── artifacts/                   Model artifacts (generated at runtime)
 └── docs/architecture.html       Interactive architecture documentation
@@ -236,8 +236,6 @@ cami-fleet/
 ### Running tests
 
 ```bash
-cd cami-fleet
-
 # Go
 cd control-plane && go test ./...
 
@@ -292,8 +290,8 @@ The stack includes a full observability layer:
 
 ## Contributing
 
-See [CONTRIBUTING.md](cami-fleet/CONTRIBUTING.md) for development setup, code style, and PR guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
 
 ## License
 
-[MIT](cami-fleet/LICENSE)
+[MIT](LICENSE)
