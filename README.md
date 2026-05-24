@@ -1,0 +1,220 @@
+# Cami Fleet
+
+[![CI](https://github.com/<your-org>/cami-fleet/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-org>/cami-fleet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](cami-fleet/LICENSE)
+[![Go 1.23](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org)
+[![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00.svg)](https://kit.svelte.dev)
+
+A control plane and device agent system for managing **edge AI deployments at scale**.
+
+Deploy models to devices by tag, watch each device download, verify the SHA-256, load the model, and stream live inference telemetry — all from an operator dashboard.
+
+```
+Operator dashboard  ──REST──▶  Go control plane  ──gRPC/mTLS──▶  Rust edge agents
+                                   │                                   │
+                              Postgres + ClickHouse + NATS        LiteRT | Ollama | Stub
+```
+
+---
+
+## Features
+
+- **Tag-based deployment** — push models to devices matching label selectors (e.g. `location=barcelona`)
+- **Content-addressed artifacts** — SHA-256 verified downloads; agents refuse tampered weights
+- **mTLS device auth** — gRPC over TLS 1.3 with mutual certificate authentication
+- **Multi-backend inference** — pluggable runtime: Google LiteRT, Ollama, or stub mode
+- **Live telemetry** — per-device tokens/sec, TTFT, memory streamed to ClickHouse
+- **Offline detection** — heartbeat watchdog marks devices offline after 30s
+- **Event bus** — NATS JetStream for cross-service device events
+- **Operator UI** — SvelteKit dashboard with fleet overview, deploy form, and device detail
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph browser[Operator Browser]
+        UI[SvelteKit + Tailwind]
+    end
+    subgraph cp[Control Plane - Go 1.23]
+        REST["REST :8080"]
+        GRPC["gRPC :9090 mTLS"]
+    end
+    subgraph stores[Data Stores]
+        PG[(Postgres 16)]
+        CH[(ClickHouse 23.8)]
+        NATS[NATS 2.10]
+    end
+    subgraph edge[Edge Devices]
+        D1[device-1 Rust agent]
+        D2[device-2 Rust agent]
+        LR[LiteRT - optional]
+        OL[Ollama - optional]
+    end
+    UI -->|REST /api| REST
+    REST --> PG
+    REST --> CH
+    REST --> NATS
+    GRPC --> PG
+    GRPC --> CH
+    D1 -->|gRPC mTLS| GRPC
+    D2 -->|gRPC mTLS| GRPC
+    D1 -.->|inference| LR
+    D1 -.->|inference| OL
+    D2 -.->|inference| LR
+    D2 -.->|inference| OL
+```
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/<your-org>/cami-fleet.git
+cd cami-fleet
+cp .env.example .env
+docker compose up --build
+```
+
+Open **http://localhost:5173** — two simulated devices appear within ~60 seconds.
+
+### Deploy a model
+
+```bash
+SHA=$(cat artifacts/sample-gemma-4-e2b.tar.gz.sha256)
+
+curl -s -X POST http://localhost:8080/api/deployments \
+  -H "X-Api-Key: changeme" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model_id\": \"gemma-4-e2b\",
+    \"artifact_url\": \"http://control-plane:8080/artifacts/sample-gemma-4-e2b.tar.gz\",
+    \"artifact_sha256\": \"$SHA\",
+    \"tag_selector\": {\"location\": \"barcelona\"}
+  }" | jq .
+```
+
+Each device cycles through `pending → downloading → verifying → running` within seconds.
+
+---
+
+## Inference Backends
+
+The agent supports three runtime backends, selected via `RUNTIME_BACKEND` or auto-detected:
+
+| Backend | Env Var | Best for |
+|---------|---------|----------|
+| **LiteRT** | `LITERT_URL` | Edge devices with NPU/GPU (Pixel, MediaTek, Qualcomm) |
+| **Ollama** | `OLLAMA_URL` | x86/ARM servers with CUDA or CPU inference |
+| **Stub** | *(default)* | CI, demos, development without a runtime |
+
+---
+
+## Project Structure
+
+```
+cami-fleet/
+├── .github/workflows/ci.yml    CI pipeline (Go, Rust, Web, Docker)
+├── docker-compose.yml           Full stack orchestration
+├── Makefile                     Dev shortcuts
+├── .env.example                 Configuration template
+│
+├── control-plane/               Go 1.23 — REST + gRPC server
+│   ├── proto/device.proto       AgentService definition
+│   ├── cmd/server/main.go       Entry point + config
+│   └── internal/
+│       ├── api/grpc/            gRPC server (register, heartbeat, deploy, telemetry)
+│       ├── api/rest/            REST API (devices, deployments, artifacts)
+│       ├── store/postgres/      Device state + deployments
+│       ├── store/clickhouse/    Time-series telemetry
+│       └── events/nats/         Event pub/sub
+│
+├── agent/                       Rust — edge device agent
+│   └── src/
+│       ├── main.rs              Register → heartbeat → watch → deploy
+│       ├── config.rs            CLI/env configuration
+│       ├── grpc_client.rs       mTLS gRPC connection
+│       ├── model_runtime.rs     Multi-backend runtime (LiteRT, Ollama, Stub)
+│       └── telemetry.rs         Streaming telemetry loop
+│
+├── web/                         SvelteKit — operator dashboard
+│   └── src/routes/
+│       ├── +page.svelte         Fleet overview
+│       ├── deployments/         Deploy form + history
+│       └── devices/[id]/        Device detail + telemetry
+│
+├── scripts/gen-certs.sh         mTLS certificate generation
+├── artifacts/                   Model artifacts (generated at runtime)
+└── docs/architecture.html       Interactive architecture documentation
+```
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CAMI_API_KEY` | `changeme` | API key for REST endpoints and web UI |
+| `ARTIFACTS_BASE_URL` | `http://control-plane:8080` | Base URL for artifact downloads |
+| `RUNTIME_BACKEND` | *(auto-detect)* | Force backend: `litert`, `ollama`, or `stub` |
+| `LITERT_URL` | *(empty)* | LiteRT server endpoint |
+| `OLLAMA_URL` | *(empty)* | Ollama API endpoint for inference |
+| `DEVICE_NAME` | `device-001` | Unique device name |
+| `DEVICE_LABELS` | *(empty)* | Comma-separated `key=value` labels |
+| `CONTROL_PLANE_URL` | `https://localhost:9090` | gRPC endpoint |
+| `CERT_DIR` | `/certs` | mTLS certificate directory |
+
+---
+
+## Development
+
+### Prerequisites
+
+| Tool | Version |
+|------|---------|
+| Docker + Compose | v2+ |
+| Go | 1.23+ |
+| Rust | stable |
+| Node.js | 20+ |
+
+### Running tests
+
+```bash
+cd cami-fleet
+
+# Go
+cd control-plane && go test ./...
+
+# Rust
+cd agent && cargo test
+
+# Web
+cd web && npm test
+```
+
+---
+
+## Service Ports
+
+| Service | Port | Protocol |
+|---------|------|----------|
+| Web UI | 5173 (dev) / 3000 (prod) | HTTP |
+| REST API | 8080 | HTTP |
+| gRPC | 9090 | gRPC / mTLS |
+| Postgres | 5432 | TCP |
+| ClickHouse | 8123 / 9000 | HTTP / TCP |
+| NATS | 4222 | TCP |
+| LiteRT | 8000 | HTTP |
+| Ollama | 11434 | HTTP |
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](cami-fleet/CONTRIBUTING.md) for development setup, code style, and PR guidelines.
+
+## License
+
+[MIT](cami-fleet/LICENSE)
