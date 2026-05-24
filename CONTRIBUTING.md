@@ -17,8 +17,8 @@ workflow and conventions used in the project.
 
 ```bash
 # Clone and start everything
-git clone https://github.com/<your-org>/cami-fleet.git
-cd cami-fleet
+git clone https://github.com/madosh/EDGE-LLM.git
+cd EDGE-LLM
 cp .env.example .env
 docker compose up --build
 ```
@@ -28,10 +28,10 @@ Open http://localhost:5173 — two simulated devices should appear within 60 sec
 ## Project structure
 
 ```
-cami-fleet/
 ├── control-plane/   Go 1.23 — REST + gRPC server
 ├── agent/           Rust — edge device agent
 ├── web/             SvelteKit — operator dashboard
+├── monitoring/      Prometheus + Grafana configs
 ├── scripts/         Certificate generation
 ├── artifacts/       Model artifacts (generated at runtime)
 └── .github/         CI workflows
