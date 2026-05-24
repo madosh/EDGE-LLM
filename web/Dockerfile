@@ -1,5 +1,5 @@
 # ── build ─────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -8,7 +8,7 @@ COPY . .
 RUN npm run build
 
 # ── runtime ──────────────────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:22-alpine
 
 RUN addgroup -S cami && adduser -S cami -G cami
 

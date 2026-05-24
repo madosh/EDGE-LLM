@@ -20,6 +20,9 @@ func getDSN(t *testing.T) string {
 
 func newStore(t *testing.T) *pgstore.Store {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping postgres integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	store, err := pgstore.New(ctx, getDSN(t))

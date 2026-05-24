@@ -8,14 +8,17 @@
 	let error = '';
 	let interval: ReturnType<typeof setInterval>;
 
+	type MetricKey = 'tps' | 'ttft_ms' | 'mem_mb';
+
 	$: id = $page.params.id;
 
 	async function load() {
+		if (!id) return;
 		try {
 			[device, telemetry] = await Promise.all([api.device(id), api.deviceTelemetry(id, 30)]);
 			error = '';
-		} catch (e: any) {
-			error = e.message;
+		} catch (e: unknown) {
+			error = e instanceof Error ? e.message : String(e);
 		}
 	}
 
@@ -43,6 +46,12 @@
 	}
 
 	$: latest = telemetry[0];
+
+	const metrics: { label: string; key: MetricKey; unit: string; color: string }[] = [
+		{ label: 'Tokens / sec', key: 'tps', unit: 'tok/s', color: '#a78bfa' },
+		{ label: 'TTFT', key: 'ttft_ms', unit: 'ms', color: '#34d399' },
+		{ label: 'Memory', key: 'mem_mb', unit: 'MB', color: '#60a5fa' },
+	];
 </script>
 
 <div class="space-y-6">
@@ -100,7 +109,7 @@
 				</div>
 			{:else}
 				<div class="grid grid-cols-3 gap-4">
-					{#each [{ label: 'Tokens / sec', key: 'tps', unit: 'tok/s', color: '#a78bfa' }, { label: 'TTFT', key: 'ttft_ms', unit: 'ms', color: '#34d399' }, { label: 'Memory', key: 'mem_mb', unit: 'MB', color: '#60a5fa' }] as metric}
+					{#each metrics as metric}
 						<div class="card">
 							<div class="text-xs text-gray-500">{metric.label}</div>
 							<div class="text-2xl font-bold mt-1 font-mono" style="color:{metric.color}">

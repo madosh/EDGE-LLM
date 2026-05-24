@@ -21,6 +21,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--health-check" {
+		os.Exit(0)
+	}
+
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
 
