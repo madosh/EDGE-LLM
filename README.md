@@ -10,18 +10,63 @@ A control plane and device agent system for managing **edge AI deployments at sc
 
 Deploy models to devices by tag, watch each device download, verify the SHA-256, load the model, and stream live inference telemetry — all from an operator dashboard.
 
-```
-┌──────────────────┐         ┌─────────────────────────┐         ┌────────────────────────┐
-│  Operator UI     │  REST   │     Control Plane       │  gRPC   │     Edge Agents        │
-│  (SvelteKit)     │────────▶│        (Go 1.23)        │────────▶│       (Rust)           │
-└──────────────────┘         └────────────┬────────────┘  mTLS   └───────────┬────────────┘
-                                          │                                  │
-                              ┌───────────┼───────────┐          ┌───────────┼───────────┐
-                              │           │           │          │           │           │
-                          ┌───▼───┐  ┌────▼────┐ ┌───▼──┐  ┌───▼───┐  ┌───▼───┐  ┌───▼──┐
-                          │Postgres│  │ClickHouse│ │ NATS │  │LiteRT │  │Ollama │  │ Stub │
-                          │  (state)│  │(telemetry)│ │(events)│  │       │  │       │  │      │
-                          └────────┘  └──────────┘ └──────┘  └───────┘  └───────┘  └──────┘
+```mermaid
+flowchart TB
+    %% ─── Top Layer: Operator ───
+    subgraph OPERATOR["OPERATOR"]
+        UI["Operator Dashboard\n(SvelteKit + Tailwind)"]
+    end
+
+    %% ─── Middle Layer: Control Plane ───
+    subgraph CLOUD["CONTROL PLANE"]
+        API["REST API\nport :8080"]
+        GRPC["gRPC Server\nport :9090 · mTLS"]
+    end
+
+    %% ─── Data Stores ───
+    subgraph STORES["DATA STORES"]
+        PG[("Postgres 16\nDevice state &\ndeployments")]
+        CH[("ClickHouse 23.8\nInference\ntelemetry")]
+        NATS["NATS 2.10\nEvent bus"]
+    end
+
+    %% ─── Bottom Layer: Edge Devices ───
+    subgraph EDGE["EDGE DEVICES (Rust Agents)"]
+        D1["Device 1"]
+        D2["Device 2"]
+        D3["Device N..."]
+    end
+
+    %% ─── Inference Runtimes ───
+    subgraph RUNTIME["INFERENCE BACKENDS"]
+        LR["LiteRT\n(on-device AI)"]
+        OL["Ollama\n(LLM server)"]
+        ST["Stub\n(demo / CI)"]
+    end
+
+    %% ─── Connections ───
+    UI -->|"REST API calls"| API
+    API --> PG
+    API --> CH
+    API --> NATS
+    GRPC --> PG
+    GRPC --> CH
+
+    D1 -->|"gRPC + mTLS"| GRPC
+    D2 -->|"gRPC + mTLS"| GRPC
+    D3 -->|"gRPC + mTLS"| GRPC
+
+    D1 -.->|"inference"| LR
+    D1 -.->|"inference"| OL
+    D2 -.->|"inference"| LR
+    D3 -.->|"inference"| ST
+
+    %% ─── Styling ───
+    style OPERATOR fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
+    style CLOUD fill:#0f172a,stroke:#38bdf8,color:#e0f2fe
+    style STORES fill:#0c1a0c,stroke:#4ade80,color:#dcfce7
+    style EDGE fill:#1c1917,stroke:#f97316,color:#ffedd5
+    style RUNTIME fill:#1a1a2e,stroke:#a78bfa,color:#ede9fe
 ```
 
 ---
