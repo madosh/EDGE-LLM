@@ -34,7 +34,7 @@ flowchart TB
     subgraph EDGE["EDGE DEVICES (Rust Agents)"]
         D1["Device 1"]
         D2["Device 2"]
-        D3["Device N..."]
+        DN["Device N…"]
     end
 
     %% ─── Inference Runtimes ───
@@ -54,12 +54,13 @@ flowchart TB
 
     D1 -->|"gRPC + mTLS"| GRPC
     D2 -->|"gRPC + mTLS"| GRPC
-    D3 -->|"gRPC + mTLS"| GRPC
+    DN -->|"gRPC + mTLS"| GRPC
 
     D1 -.->|"inference"| LR
     D1 -.->|"inference"| OL
     D2 -.->|"inference"| LR
-    D3 -.->|"inference"| ST
+    D2 -.->|"inference"| OL
+    DN -.->|"inference"| ST
 
     %% ─── Styling ───
     style OPERATOR fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
@@ -131,7 +132,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open **http://localhost:5173** — two simulated devices appear within ~60 seconds.
+Open **http://localhost:5173** — two simulated devices appear within ~60 seconds. The architecture supports N devices; the demo ships two by default.
 
 ### Deploy a model
 
