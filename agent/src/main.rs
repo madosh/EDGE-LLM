@@ -16,10 +16,7 @@ use tokio::time::{interval, sleep};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use proto::{
-    agent_service_client::AgentServiceClient, DeploymentAck, Heartbeat, RegisterRequest,
-    WatchRequest,
-};
+use proto::{agent_service_client::AgentServiceClient, DeploymentAck, Heartbeat, RegisterRequest, WatchRequest};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -140,7 +137,18 @@ async fn watch_deployments(
         let cfg = cfg.clone();
 
         tokio::spawn(async move {
-            execute_deployment(cp_url, cert_dir, did, dep_id, model_id, artifact_url, artifact_sha256, tx, cfg).await;
+            execute_deployment(
+                cp_url,
+                cert_dir,
+                did,
+                dep_id,
+                model_id,
+                artifact_url,
+                artifact_sha256,
+                tx,
+                cfg,
+            )
+            .await;
         });
     }
     Ok(())
@@ -169,12 +177,14 @@ async fn execute_deployment(
             async move {
                 match grpc_client::connect(&url, &cert).await {
                     Ok(mut c) => {
-                        let _ = c.ack_deployment(DeploymentAck {
-                            deployment_id: dep,
-                            device_id: did,
-                            status: st,
-                            error_msg: em,
-                        }).await;
+                        let _ = c
+                            .ack_deployment(DeploymentAck {
+                                deployment_id: dep,
+                                device_id: did,
+                                status: st,
+                                error_msg: em,
+                            })
+                            .await;
                     }
                     Err(e) => warn!("ack connect failed: {e}"),
                 }

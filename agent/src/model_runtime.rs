@@ -60,9 +60,7 @@ pub async fn download_artifact(model_id: &str, artifact_url: &str) -> Result<byt
         bail!("download returned HTTP {}", resp.status());
     }
 
-    resp.bytes()
-        .await
-        .map_err(|e| anyhow::anyhow!("read body failed: {e}"))
+    resp.bytes().await.map_err(|e| anyhow::anyhow!("read body failed: {e}"))
 }
 
 pub fn verify_artifact(model_id: &str, bytes: &[u8], expected_sha256: &str) -> Result<()> {
@@ -97,11 +95,7 @@ async fn load_model_litert(model_id: &str, litert_url: &str) -> Result<ModelHand
     let model_name = sanitize_model_name(model_id);
 
     // Verify the LiteRT server is reachable
-    let health_resp = client
-        .get(litert_url)
-        .timeout(Duration::from_secs(15))
-        .send()
-        .await;
+    let health_resp = client.get(litert_url).timeout(Duration::from_secs(15)).send().await;
 
     match health_resp {
         Ok(r) if r.status().is_success() => {
@@ -354,24 +348,22 @@ async fn sample_telemetry_ollama(ollama_url: &str, model: &str) -> Telemetry {
         .await;
 
     let (tps, ttft_ms) = match resp {
-        Ok(r) if r.status().is_success() => {
-            match r.json::<OllamaGenerateResponse>().await {
-                Ok(gen) => {
-                    let tps = if gen.eval_duration > 0 {
-                        (gen.eval_count as f32) / (gen.eval_duration as f32 / 1_000_000_000.0)
-                    } else {
-                        0.0
-                    };
-                    let ttft = if gen.prompt_eval_duration > 0 {
-                        gen.prompt_eval_duration as f32 / 1_000_000.0
-                    } else {
-                        start.elapsed().as_millis() as f32
-                    };
-                    (tps, ttft)
-                }
-                Err(_) => (0.0, start.elapsed().as_millis() as f32),
+        Ok(r) if r.status().is_success() => match r.json::<OllamaGenerateResponse>().await {
+            Ok(gen) => {
+                let tps = if gen.eval_duration > 0 {
+                    (gen.eval_count as f32) / (gen.eval_duration as f32 / 1_000_000_000.0)
+                } else {
+                    0.0
+                };
+                let ttft = if gen.prompt_eval_duration > 0 {
+                    gen.prompt_eval_duration as f32 / 1_000_000.0
+                } else {
+                    start.elapsed().as_millis() as f32
+                };
+                (tps, ttft)
             }
-        }
+            Err(_) => (0.0, start.elapsed().as_millis() as f32),
+        },
         _ => return sample_telemetry_stub(),
     };
 
@@ -484,11 +476,19 @@ mod tests {
     fn test_runtime_backend_name() {
         assert_eq!(RuntimeBackend::Stub.name(), "stub");
         assert_eq!(
-            RuntimeBackend::Ollama { url: "x".into(), model: "y".into() }.name(),
+            RuntimeBackend::Ollama {
+                url: "x".into(),
+                model: "y".into()
+            }
+            .name(),
             "ollama"
         );
         assert_eq!(
-            RuntimeBackend::LiteRT { url: "x".into(), model: "y".into() }.name(),
+            RuntimeBackend::LiteRT {
+                url: "x".into(),
+                model: "y".into()
+            }
+            .name(),
             "litert"
         );
     }

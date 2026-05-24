@@ -64,15 +64,12 @@ impl Config {
 
         match backend.as_str() {
             "litert" => {
-                let url = non_empty(&self.litert_url)
-                    .unwrap_or("http://localhost:8000".to_string());
-                let model = non_empty(&self.litert_model)
-                    .unwrap_or_else(|| model_id.to_string());
+                let url = non_empty(&self.litert_url).unwrap_or("http://localhost:8000".to_string());
+                let model = non_empty(&self.litert_model).unwrap_or_else(|| model_id.to_string());
                 RuntimeBackend::LiteRT { url, model }
             }
             "ollama" => {
-                let url = non_empty(&self.ollama_url)
-                    .unwrap_or("http://localhost:11434".to_string());
+                let url = non_empty(&self.ollama_url).unwrap_or("http://localhost:11434".to_string());
                 RuntimeBackend::Ollama {
                     url,
                     model: model_id.to_string(),
@@ -82,8 +79,7 @@ impl Config {
             _ => {
                 // Auto-detect: prefer LiteRT > Ollama > Stub
                 if let Some(url) = non_empty(&self.litert_url) {
-                    let model = non_empty(&self.litert_model)
-                        .unwrap_or_else(|| model_id.to_string());
+                    let model = non_empty(&self.litert_model).unwrap_or_else(|| model_id.to_string());
                     RuntimeBackend::LiteRT { url, model }
                 } else if let Some(url) = non_empty(&self.ollama_url) {
                     RuntimeBackend::Ollama {

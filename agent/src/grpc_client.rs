@@ -8,11 +8,11 @@ use crate::proto::agent_service_client::AgentServiceClient;
 pub async fn connect(url: &str, cert_dir: &str) -> Result<AgentServiceClient<tonic::transport::Channel>> {
     info!(%url, "connecting to control plane (mTLS)");
 
-    let ca_pem      = tokio::fs::read(format!("{cert_dir}/ca.crt")).await?;
+    let ca_pem = tokio::fs::read(format!("{cert_dir}/ca.crt")).await?;
     let client_cert = tokio::fs::read(format!("{cert_dir}/device.crt")).await?;
-    let client_key  = tokio::fs::read(format!("{cert_dir}/device.key")).await?;
+    let client_key = tokio::fs::read(format!("{cert_dir}/device.key")).await?;
 
-    let ca       = Certificate::from_pem(&ca_pem);
+    let ca = Certificate::from_pem(&ca_pem);
     let identity = Identity::from_pem(&client_cert, &client_key);
 
     // SNI hostname for TLS handshake — must match the server cert's CN / SAN

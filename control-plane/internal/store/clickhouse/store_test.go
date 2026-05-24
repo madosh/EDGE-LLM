@@ -21,6 +21,9 @@ func getDSN(t *testing.T) string {
 
 func newStore(t *testing.T) *chstore.Store {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping clickhouse integration test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	store, err := chstore.New(ctx, getDSN(t))

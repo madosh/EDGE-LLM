@@ -15,15 +15,11 @@ fn test_artifact_verification_roundtrip() {
     let expected = hex::encode(Sha256::digest(payload));
 
     // Correct hash passes
-    assert!(
-        cami_agent::model_runtime::verify_artifact("int-test-model", payload, &expected).is_ok()
-    );
+    assert!(cami_agent::model_runtime::verify_artifact("int-test-model", payload, &expected).is_ok());
 
     // Wrong hash fails
     let wrong = "0".repeat(64);
-    assert!(
-        cami_agent::model_runtime::verify_artifact("int-test-model", payload, &wrong).is_err()
-    );
+    assert!(cami_agent::model_runtime::verify_artifact("int-test-model", payload, &wrong).is_err());
 }
 
 /// Verify stub backend loads without panicking.
