@@ -65,6 +65,35 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 	return res.json();
 }
 
+export interface FleetSummary {
+	device_count: number;
+	avg_tps: number;
+	p50_tps: number;
+	p95_tps: number;
+	avg_ttft_ms: number;
+	p50_ttft_ms: number;
+	p95_ttft_ms: number;
+	avg_mem_mb: number;
+	total_mem_mb: number;
+}
+
+export interface FleetTimeSeriesPoint {
+	ts: string;
+	avg_tps: number;
+	avg_ttft_ms: number;
+	avg_mem_mb: number;
+	device_count: number;
+}
+
+export interface DeviceMetric {
+	device_id: string;
+	model_id: string;
+	tps: number;
+	ttft_ms: number;
+	mem_mb: number;
+	status: string;
+}
+
 export const api = {
 	devices: () => get<Device[]>('/api/devices'),
 	device: (id: string) => get<Device>(`/api/devices/${id}`),
@@ -77,5 +106,14 @@ export const api = {
 		artifact_url: string;
 		artifact_sha256: string;
 		tag_selector: Record<string, string>;
-	}) => post<Deployment>('/api/deployments', body)
+	}) => post<Deployment>('/api/deployments', body),
+
+	// Fleet-wide telemetry
+	fleetSummary: (window = '5m') =>
+		get<FleetSummary>(`/api/telemetry/fleet?window=${window}`),
+	fleetTimeSeries: (window = '30m', bucket = 30) =>
+		get<FleetTimeSeriesPoint[]>(`/api/telemetry/timeseries?window=${window}&bucket=${bucket}`),
+	fleetDevices: () => get<DeviceMetric[]>('/api/telemetry/devices'),
+	telemetryAlerts: (threshold = 10) =>
+		get<DeviceMetric[]>(`/api/telemetry/alerts?threshold=${threshold}`)
 };

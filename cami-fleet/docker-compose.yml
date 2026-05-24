@@ -114,22 +114,54 @@ services:
   #     - fleet
   #   restart: unless-stopped
 
-  # ── Ollama (optional — real LLM inference) ──────────────────────────────────
-  # Uncomment to enable real model inference instead of stub telemetry.
+  # ── Ollama (real LLM inference) ──────────────────────────────────────────────
   # For GPU support, add: deploy: { resources: { reservations: { devices: [{capabilities: [gpu]}] }}}
-  #
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   volumes:
-  #     - ollama-data:/root/.ollama
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 12
-  #   networks:
-  #     - fleet
-  #   restart: unless-stopped
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Prometheus ───────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Grafana ─────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-changeme}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./monitoring/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/json:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - fleet
+    restart: unless-stopped
 
   # ── Control Plane ─────────────────────────────────────────────────────────────
   control-plane:
@@ -172,7 +204,7 @@ services:
       - fleet
     restart: unless-stopped
 
-  # ── Simulated device 1 (Jetson Orin, location=barcelona) ─────────────────────
+  # ── Simulated device 1 (Jetson Orin, location=barcelona) — real Ollama inference
   device-1:
     build:
       context: .
@@ -183,14 +215,16 @@ services:
       CONTROL_PLANE_URL:   "https://control-plane:9090"
       CERT_DIR:            /certs
       RUST_LOG:            "cami_agent=info,warn"
-      # RUNTIME_BACKEND:   ""                       # litert | ollama | stub (auto-detect if empty)
+      RUNTIME_BACKEND:     "ollama"
+      OLLAMA_URL:          "http://ollama:11434"
       # LITERT_URL:        "http://litert:8000"      # uncomment with litert service
       # LITERT_MODEL:      "gemma3-1b"               # model name served by lit serve
-      # OLLAMA_URL:        "http://ollama:11434"      # uncomment with ollama service
     volumes:
       - certs:/certs:ro
     depends_on:
       control-plane:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
       cert-gen:
         condition: service_completed_successfully
@@ -198,7 +232,7 @@ services:
       - fleet
     restart: unless-stopped
 
-  # ── Simulated device 2 (Raspberry Pi 5, location=barcelona) ──────────────────
+  # ── Simulated device 2 (Raspberry Pi 5, location=barcelona) — stub inference
   device-2:
     build:
       context: .
@@ -209,10 +243,9 @@ services:
       CONTROL_PLANE_URL:   "https://control-plane:9090"
       CERT_DIR:            /certs
       RUST_LOG:            "cami_agent=info,warn"
-      # RUNTIME_BACKEND:   ""                       # litert | ollama | stub (auto-detect if empty)
-      # LITERT_URL:        "http://litert:8000"      # uncomment with litert service
-      # LITERT_MODEL:      "gemma3-1b"               # model name served by lit serve
-      # OLLAMA_URL:        "http://ollama:11434"      # uncomment with ollama service
+      RUNTIME_BACKEND:     "stub"
+      # OLLAMA_URL:        "http://ollama:11434"      # uncomment to use ollama
+      # LITERT_URL:        "http://litert:8000"       # uncomment with litert service
     volumes:
       - certs:/certs:ro
     depends_on:

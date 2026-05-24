@@ -12,6 +12,7 @@
 			<nav class="flex gap-5 text-sm text-gray-400">
 				<a href="/" class="hover:text-white transition-colors">Fleet</a>
 				<a href="/deployments" class="hover:text-white transition-colors">Deployments</a>
+				<a href="/monitoring" class="hover:text-white transition-colors">Monitoring</a>
 			</nav>
 			<span class="ml-auto text-xs text-gray-600 font-mono">v0.1.0</span>
 		</div>
