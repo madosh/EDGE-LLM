@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { api, type Device } from '$lib/api';
+	import { subscribeEvents } from '$lib/events';
 
 	let devices: Device[] = [];
 	let error = '';
 	let loading = true;
 	let interval: ReturnType<typeof setInterval>;
+	let unsubscribe: (() => void) | null = null;
 
 	async function load() {
 		try {
@@ -20,10 +22,17 @@
 
 	onMount(() => {
 		load();
-		interval = setInterval(load, 5000);
+		// Polling as fallback, SSE triggers immediate refreshes
+		interval = setInterval(load, 10000);
+		unsubscribe = subscribeEvents(() => {
+			load();
+		});
 	});
 
-	onDestroy(() => clearInterval(interval));
+	onDestroy(() => {
+		clearInterval(interval);
+		unsubscribe?.();
+	});
 
 	$: online = devices.filter((d) => d.status === 'online').length;
 	$: offline = devices.filter((d) => d.status === 'offline').length;

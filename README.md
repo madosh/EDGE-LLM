@@ -256,12 +256,37 @@ cd web && npm test
 |---------|------|----------|
 | Web UI | 5173 (dev) / 3000 (prod) | HTTP |
 | REST API | 8080 | HTTP |
+| Prometheus Metrics | 8080/metrics | HTTP |
 | gRPC | 9090 | gRPC / mTLS |
+| Prometheus | 9091 | HTTP |
+| Grafana | 3001 | HTTP |
 | Postgres | 5432 | TCP |
 | ClickHouse | 8123 / 9000 | HTTP / TCP |
 | NATS | 4222 | TCP |
 | LiteRT | 8000 | HTTP |
 | Ollama | 11434 | HTTP |
+
+---
+
+## Monitoring & Observability
+
+The stack includes a full observability layer:
+
+- **Operator Dashboard** (`http://localhost:5173/monitoring`) — fleet-wide telemetry with live charts, device performance table, and alert banners
+- **Prometheus** (`http://localhost:9091`) — scrapes control-plane metrics every 15s
+- **Grafana** (`http://localhost:3001`) — pre-provisioned dashboards for fleet overview, inference performance, and control-plane health (admin/changeme)
+- **Server-Sent Events** (`/api/events/stream`) — real-time push from NATS to browser
+- **Webhook Alerts** — optional: set `WEBHOOK_URL` in `.env` to send device-offline and deployment-failed alerts to Slack/Discord/any endpoint
+
+### Exposed Prometheus metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `cami_devices_total{status}` | Gauge | Devices by online/offline status |
+| `cami_grpc_streams_active` | Gauge | Active gRPC telemetry streams |
+| `cami_deployments_total{state}` | Gauge | Deployments by state |
+| `cami_rest_request_duration_seconds` | Histogram | REST API latency |
+| `cami_telemetry_inserts_total` | Counter | ClickHouse telemetry inserts |
 
 ---
 

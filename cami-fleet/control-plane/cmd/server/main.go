@@ -15,6 +15,7 @@ import (
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
 	restapi "github.com/cami-fleet/control-plane/internal/api/rest"
 	natsclient "github.com/cami-fleet/control-plane/internal/events/nats"
+	"github.com/cami-fleet/control-plane/internal/notify"
 	chstore "github.com/cami-fleet/control-plane/internal/store/clickhouse"
 	pgstore "github.com/cami-fleet/control-plane/internal/store/postgres"
 )
@@ -81,8 +82,14 @@ func main() {
 		}
 	}()
 
+	// ── Webhook notifier (optional) ──────────────────────────────────────────
+	webhookNotifier := notify.NewWebhookNotifier(cfg.WebhookURL)
+	if webhookNotifier != nil {
+		log.Info().Str("url", cfg.WebhookURL).Msg("webhook notifier enabled")
+	}
+
 	// ── Offline detector ──────────────────────────────────────────────────────
-	go runOfflineDetector(ctx, pg, nc)
+	go runOfflineDetector(ctx, pg, nc, webhookNotifier)
 
 	log.Info().Msg("cami-fleet control plane ready")
 	<-ctx.Done()
@@ -100,7 +107,7 @@ func main() {
 }
 
 // runOfflineDetector marks devices offline when last heartbeat > 30 s ago.
-func runOfflineDetector(ctx context.Context, pg *pgstore.Store, nc *natsclient.Client) {
+func runOfflineDetector(ctx context.Context, pg *pgstore.Store, nc *natsclient.Client, webhook *notify.WebhookNotifier) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -116,6 +123,11 @@ func runOfflineDetector(ctx context.Context, pg *pgstore.Store, nc *natsclient.C
 			for _, id := range ids {
 				log.Info().Str("device_id", id).Msg("device went offline")
 				nc.Publish("device."+id+".offline", map[string]string{"device_id": id})
+				restapi.DevicesGauge.WithLabelValues("offline").Inc()
+				restapi.DevicesGauge.WithLabelValues("online").Dec()
+				if webhook != nil {
+					go webhook.NotifyDeviceOffline(id, id)
+				}
 			}
 		}
 	}
@@ -131,6 +143,7 @@ type config struct {
 	CertDir          string
 	ArtifactsDir     string
 	ArtifactsBaseURL string
+	WebhookURL       string
 }
 
 func loadConfig() config {
@@ -145,6 +158,7 @@ func loadConfig() config {
 		CertDir:          getEnv("CERT_DIR", "/certs"),
 		ArtifactsDir:     getEnv("ARTIFACTS_DIR", "/artifacts"),
 		ArtifactsBaseURL: getEnv("ARTIFACTS_BASE_URL", fmt.Sprintf("http://localhost:%s", restPort)),
+		WebhookURL:       getEnv("WEBHOOK_URL", ""),
 	}
 }
 

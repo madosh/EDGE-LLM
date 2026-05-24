@@ -43,8 +43,12 @@ func NewRouter(
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(zerologMiddleware)
+	r.Use(metricsMiddleware)
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
+
+	// Prometheus metrics endpoint (no auth)
+	r.Handle("/metrics", MetricsHandler())
 
 	r.Group(func(r chi.Router) {
 		r.Use(apiKeyMiddleware(apiKey))
@@ -56,7 +60,16 @@ func NewRouter(
 		r.Post("/api/deployments", h.CreateDeployment)
 		r.Get("/api/deployments", h.ListDeployments)
 		r.Get("/api/deployments/{id}", h.GetDeployment)
+
+		// Fleet-wide telemetry
+		r.Get("/api/telemetry/fleet", h.GetFleetSummary)
+		r.Get("/api/telemetry/timeseries", h.GetFleetTimeSeries)
+		r.Get("/api/telemetry/devices", h.GetFleetDevices)
+		r.Get("/api/telemetry/alerts", h.GetTelemetryAlerts)
 	})
+
+	// SSE endpoint — no API key required for browser EventSource (uses same CORS)
+	r.Get("/api/events/stream", h.SSEStream)
 
 	// Artifacts served without API key so agents can download freely
 	r.Handle("/artifacts/*", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))

@@ -2,8 +2,10 @@ package rest
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
@@ -171,6 +173,128 @@ func (h *Handlers) GetDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, dep)
+}
+
+// ── Fleet Telemetry Handlers ─────────────────────────────────────────────────
+
+func (h *Handlers) GetFleetSummary(w http.ResponseWriter, r *http.Request) {
+	window := parseDuration(r.URL.Query().Get("window"), 5*time.Minute)
+	summary, err := h.ch.QueryFleetSummary(r.Context(), window)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, summary)
+}
+
+func (h *Handlers) GetFleetTimeSeries(w http.ResponseWriter, r *http.Request) {
+	window := parseDuration(r.URL.Query().Get("window"), 30*time.Minute)
+	bucket := 30 // seconds
+	if b := r.URL.Query().Get("bucket"); b != "" {
+		if n, err := strconv.Atoi(b); err == nil && n > 0 {
+			bucket = n
+		}
+	}
+	series, err := h.ch.QueryFleetTimeSeries(r.Context(), window, bucket)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if series == nil {
+		series = []chstore.FleetTimeSeries{}
+	}
+	writeJSON(w, series)
+}
+
+func (h *Handlers) GetFleetDevices(w http.ResponseWriter, r *http.Request) {
+	metrics, err := h.ch.QueryFleetLatest(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if metrics == nil {
+		metrics = []chstore.DeviceMetric{}
+	}
+	writeJSON(w, metrics)
+}
+
+func (h *Handlers) GetTelemetryAlerts(w http.ResponseWriter, r *http.Request) {
+	threshold := 10.0
+	if t := r.URL.Query().Get("threshold"); t != "" {
+		if v, err := strconv.ParseFloat(t, 64); err == nil && v > 0 {
+			threshold = v
+		}
+	}
+	slow, err := h.ch.QuerySlowDevices(r.Context(), threshold)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if slow == nil {
+		slow = []chstore.DeviceMetric{}
+	}
+	writeJSON(w, slow)
+}
+
+// SSEStream pushes real-time events to browser clients via Server-Sent Events.
+func (h *Handlers) SSEStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	flusher.Flush()
+
+	eventCh := make(chan []byte, 64)
+
+	// Subscribe to all device events via NATS
+	sub1, _ := h.nats.Subscribe("device.>", func(data []byte) {
+		select {
+		case eventCh <- data:
+		default:
+		}
+	})
+	sub2, _ := h.nats.Subscribe("deployment.>", func(data []byte) {
+		select {
+		case eventCh <- data:
+		default:
+		}
+	})
+	defer func() {
+		if sub1 != nil {
+			sub1.Unsubscribe()
+		}
+		if sub2 != nil {
+			sub2.Unsubscribe()
+		}
+	}()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data := <-eventCh:
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+func parseDuration(s string, fallback time.Duration) time.Duration {
+	if s == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
