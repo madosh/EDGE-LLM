@@ -392,8 +392,8 @@
       <div class="lbl">Device Auth</div>
     </div>
     <div class="hero-stat">
-      <div class="val">5</div>
-      <div class="lbl">Infrastructure Services</div>
+      <div class="val">25+</div>
+      <div class="lbl">Test Cases</div>
     </div>
   </div>
 </header>
@@ -410,6 +410,8 @@
   <a href="#stack">Tech Stack</a>
   <a href="#config">Configuration</a>
   <a href="#ports">Ports</a>
+  <a href="#testing">Testing &amp; CI</a>
+  <a href="#structure">Project Structure</a>
   <a href="#roadmap">Roadmap</a>
 </nav>
 
@@ -1044,7 +1046,209 @@ flowchart TD
   </section>
 
   <!-- ══════════════════════════════════════════════════════
-       11 - ROADMAP
+       11 - TESTING & CI
+  ═══════════════════════════════════════════════════════ -->
+  <section id="testing">
+    <div class="section-header">
+      <div class="section-icon icon-teal">&#x2705;</div>
+      <div>
+        <h2>Testing &amp; CI Pipeline</h2>
+        <p>Multi-language test suites with GitHub Actions continuous integration</p>
+      </div>
+    </div>
+
+    <div class="diagram-card" style="margin-bottom:24px;">
+      <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">CI Pipeline</p>
+      <div class="mermaid">
+flowchart LR
+    subgraph Trigger["Push / PR to main"]
+        SRC["Source Change"]
+    end
+
+    subgraph GoJob["Go Job"]
+        PROTO["protoc generate"] --> TIDY["go mod tidy"]
+        TIDY --> VET["go vet"]
+        VET --> GOTEST["go test -race"]
+    end
+
+    subgraph RustJob["Rust Job"]
+        FMT["cargo fmt --check"] --> CLIP["cargo clippy -D warnings"]
+        CLIP --> RTEST["cargo test"]
+    end
+
+    subgraph WebJob["Web Job"]
+        INST["npm ci"] --> LINT["eslint"]
+        LINT --> TCHECK["svelte-check"]
+        TCHECK --> VTEST["vitest run"]
+    end
+
+    subgraph DockerJob["Docker Job"]
+        BCP["Build control-plane"] --> BAGT["Build agent"]
+        BAGT --> BWEB["Build web"]
+    end
+
+    SRC --> GoJob
+    SRC --> RustJob
+    SRC --> WebJob
+    SRC --> DockerJob
+
+    style Trigger fill:#1e1b3a,stroke:#6c63ff,color:#e2e8f0
+    style GoJob fill:#1a2a1e,stroke:#00d9a3,color:#e2e8f0
+    style RustJob fill:#2a2210,stroke:#ffb142,color:#e2e8f0
+    style WebJob fill:#1e1b3a,stroke:#6c63ff,color:#e2e8f0
+    style DockerJob fill:#2a1a1a,stroke:#ff6584,color:#e2e8f0
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="backend-card" style="border-top: 3px solid #00d9a3;">
+        <h4>Go Tests</h4>
+        <div class="subtitle">Control plane unit + integration tests</div>
+        <div class="props">
+          <div class="prop"><span class="key">Postgres</span><span class="value"><code>store_test.go</code> - Upsert, labels, heartbeat, deployment completion, partial failure</span></div>
+          <div class="prop"><span class="key">ClickHouse</span><span class="value"><code>store_test.go</code> - Insert, query, limit, ordering</span></div>
+          <div class="prop"><span class="key">REST</span><span class="value"><code>handlers_test.go</code> - Health, auth middleware, validation, artifacts, CORS</span></div>
+          <div class="prop"><span class="key">gRPC</span><span class="value"><code>server_test.go</code> - Push fanout, watcher registration, device isolation</span></div>
+          <div class="prop"><span class="key">Model</span><span class="value"><code>deployment_test.go</code> - Status constant uniqueness</span></div>
+        </div>
+      </div>
+      <div class="backend-card" style="border-top: 3px solid #ffb142;">
+        <h4>Rust Tests</h4>
+        <div class="subtitle">Agent unit + integration tests</div>
+        <div class="props">
+          <div class="prop"><span class="key">Runtime</span><span class="value"><code>model_runtime.rs</code> - SHA-256 verify, sanitize, stub telemetry, backend names</span></div>
+          <div class="prop"><span class="key">Config</span><span class="value"><code>config.rs</code> - Label parsing, auto-detect, explicit backend, model override</span></div>
+          <div class="prop"><span class="key">Integration</span><span class="value"><code>tests/integration.rs</code> - Artifact roundtrip, stub load, telemetry sampling</span></div>
+        </div>
+      </div>
+      <div class="backend-card" style="border-top: 3px solid #6c63ff;">
+        <h4>Web Tests</h4>
+        <div class="subtitle">SvelteKit Vitest test suite</div>
+        <div class="props">
+          <div class="prop"><span class="key">API</span><span class="value"><code>api.test.ts</code> - Mock fetch for all 6 endpoints</span></div>
+          <div class="prop"><span class="key">Coverage</span><span class="value">devices, device, telemetry, deployments, artifacts, createDeployment</span></div>
+          <div class="prop"><span class="key">Error</span><span class="value">HTTP error propagation (404, 500)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="diagram-card" style="margin-top:24px;padding:0;overflow:hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th>Quality Tool</th>
+            <th>Config File</th>
+            <th>Scope</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>golangci-lint</td><td><code>.golangci.yml</code></td><td>errcheck, govet, staticcheck, unused, ineffassign</td></tr>
+          <tr><td>rustfmt</td><td><code>rustfmt.toml</code></td><td>Edition 2021, max_width 120</td></tr>
+          <tr><td>clippy</td><td><code>clippy.toml</code></td><td>Argument threshold 10, complexity 300</td></tr>
+          <tr><td>ESLint</td><td><code>eslint.config.js</code></td><td>Flat config: JS + TS + Svelte recommended</td></tr>
+          <tr><td>Prettier</td><td><code>.prettierrc</code></td><td>Semicolons, single quotes, Svelte plugin</td></tr>
+          <tr><td>EditorConfig</td><td><code>.editorconfig</code></td><td>Tabs for Go/Make, 2-space for TS/YAML/JSON</td></tr>
+          <tr><td>pre-commit</td><td><code>.pre-commit-config.yaml</code></td><td>go-fmt, go-vet, rustfmt, clippy, eslint</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════
+       12 - PROJECT STRUCTURE
+  ═══════════════════════════════════════════════════════ -->
+  <section id="structure">
+    <div class="section-header">
+      <div class="section-icon icon-purple">&#x1F4C2;</div>
+      <div>
+        <h2>Project Structure</h2>
+        <p>Directory layout and key files across all three components</p>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="diagram-card">
+        <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Control Plane (Go 1.23)</p>
+        <pre style="font-family:'Fira Code','Cascadia Code',monospace;font-size:.78rem;color:var(--text);line-height:1.6;margin:0;"><code style="background:none;padding:0;">control-plane/
+  cmd/server/main.go        Entry point + config
+  internal/
+    api/grpc/
+      server.go             gRPC: Register, Heartbeat, Watch, Ack
+      server_test.go        Push fanout + watcher tests
+    api/rest/
+      server.go             Chi router + middleware
+      handlers.go           REST endpoints
+      handlers_test.go      httptest-based endpoint tests
+    store/postgres/
+      store.go              Devices, deployments, JSONB
+      store_test.go         Integration tests (8 cases)
+    store/clickhouse/
+      store.go              Telemetry insert + query
+      store_test.go         Integration tests (4 cases)
+    events/nats/
+      client.go             JetStream pub/sub
+    model/
+      device.go             Device struct + status types
+      deployment.go         Deployment + DeviceDeployment
+      telemetry.go          TelemetryRow
+  proto/device.proto        AgentService definition
+  Dockerfile                Multi-stage distroless build
+  .golangci.yml             Linter config</code></pre>
+      </div>
+      <div class="diagram-card">
+        <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Edge Agent (Rust)</p>
+        <pre style="font-family:'Fira Code','Cascadia Code',monospace;font-size:.78rem;color:var(--text);line-height:1.6;margin:0;"><code style="background:none;padding:0;">agent/
+  src/
+    main.rs                 Register + heartbeat + deploy
+    lib.rs                  Library exports for tests
+    config.rs               CLI/env config + resolve_backend()
+    grpc_client.rs          mTLS gRPC connection
+    model_runtime.rs        LiteRT / Ollama / Stub dispatch
+    telemetry.rs            Streaming telemetry loop
+  tests/
+    integration.rs          End-to-end stub backend tests
+  build.rs                  tonic-build proto compilation
+  Cargo.toml                Dependencies + lib/bin targets
+  Dockerfile                Multi-stage slim build
+  rustfmt.toml              Format config
+  clippy.toml               Lint thresholds</code></pre>
+      </div>
+      <div class="diagram-card">
+        <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Web UI (SvelteKit)</p>
+        <pre style="font-family:'Fira Code','Cascadia Code',monospace;font-size:.78rem;color:var(--text);line-height:1.6;margin:0;"><code style="background:none;padding:0;">web/
+  src/
+    routes/
+      +page.svelte          Fleet overview
+      deployments/           Deploy form + history
+      devices/[id]/          Device detail + telemetry
+    lib/
+      api.ts                Typed API client
+      api.test.ts           Vitest mock-fetch tests
+  Dockerfile                Multi-stage Node prod build
+  eslint.config.js          Flat ESLint config
+  .prettierrc               Prettier config
+  package.json              Scripts + devDependencies</code></pre>
+      </div>
+      <div class="diagram-card">
+        <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Root / Infrastructure</p>
+        <pre style="font-family:'Fira Code','Cascadia Code',monospace;font-size:.78rem;color:var(--text);line-height:1.6;margin:0;"><code style="background:none;padding:0;">cami-fleet/
+  docker-compose.yml        Full stack (7+ services)
+  .github/workflows/ci.yml  Go + Rust + Web + Docker CI
+  scripts/gen-certs.sh      mTLS certificate generation
+  artifacts/                Model artifacts (runtime)
+  docs/architecture.html    This page
+  .gitignore                Go/Rust/Node/IDE ignores
+  .editorconfig             Cross-language formatting
+  .pre-commit-config.yaml   Pre-commit hooks
+  .env.example              Environment template
+  LICENSE                   MIT
+  CONTRIBUTING.md           Dev setup + PR guidelines
+  README.md                 GitHub-facing documentation</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════
+       13 - ROADMAP
   ═══════════════════════════════════════════════════════ -->
   <section id="roadmap">
     <div class="section-header">
@@ -1080,9 +1284,12 @@ flowchart TD
             <tr><td>Infra</td><td>Docker healthchecks + <code>service_healthy</code> dependencies</td><td><span class="status status-done">Done</span></td></tr>
             <tr><td>CI/CD</td><td>GitHub Actions workflow (Go + Rust + Web + Docker)</td><td><span class="status status-done">Done</span></td></tr>
             <tr><td>Quality</td><td>Linting configs: golangci-lint, rustfmt, clippy, eslint, prettier</td><td><span class="status status-done">Done</span></td></tr>
-            <tr><td>Tests</td><td>Go tests (handlers, deployment model), Rust tests (config, runtime), Web tests (API client)</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Quality</td><td>Pre-commit hooks: go-fmt, go-vet, rustfmt, clippy, eslint</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Tests</td><td>Go: Postgres store (8 tests), ClickHouse store (4 tests), REST handlers (8 tests), gRPC server (5 tests)</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Tests</td><td>Rust: model_runtime unit tests, config parsing tests, integration test suite</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Tests</td><td>Web: Vitest API client tests (6 endpoint groups with error handling)</td><td><span class="status status-done">Done</span></td></tr>
             <tr><td>Docs</td><td>Professional README with badges, architecture diagram, quick start</td><td><span class="status status-done">Done</span></td></tr>
-            <tr><td>Repo</td><td>.gitignore, LICENSE (MIT), CONTRIBUTING.md, .editorconfig</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Repo</td><td>.gitignore, LICENSE (MIT), CONTRIBUTING.md, .editorconfig, .pre-commit-config.yaml</td><td><span class="status status-done">Done</span></td></tr>
           </tbody>
         </table>
       </div>

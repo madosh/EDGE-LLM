@@ -6,38 +6,105 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	restapi "github.com/cami-fleet/control-plane/internal/api/rest"
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
 )
 
-func setupTestRouter(t *testing.T) http.Handler {
+func setupTestRouter(t *testing.T, artifactsDir string) http.Handler {
 	t.Helper()
-	// These tests exercise HTTP routing, middleware, and JSON encoding.
-	// Store interactions are covered by store_test.go; here we rely on
-	// the router wiring being correct. In a full test suite, inject mock stores.
-	return nil // placeholder — see note below
+	grpcSrv := grpcapi.NewServer(nil, nil, nil)
+	// Pass nil stores — endpoints that hit the DB will fail, but we can
+	// test routing, middleware, health, and artifact discovery.
+	return restapi.NewRouter(nil, nil, grpcSrv, nil, artifactsDir, "http://test:8080", "test-key")
 }
 
-// TestHealthEndpoint verifies GET /api/health returns 200 with {"status":"ok"}.
 func TestHealthEndpoint(t *testing.T) {
-	// Minimal smoke test that can compile without database dependencies.
-	// Full integration tests should use testcontainers.
-	t.Run("response format", func(t *testing.T) {
-		body := `{"status":"ok"}`
-		var m map[string]string
-		if err := json.Unmarshal([]byte(body), &m); err != nil {
-			t.Fatalf("unexpected json: %v", err)
-		}
-		if m["status"] != "ok" {
-			t.Errorf("expected status=ok, got %s", m["status"])
-		}
-	})
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Header.Set("X-Api-Key", "test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["status"] != "ok" {
+		t.Errorf("expected status=ok, got %s", body["status"])
+	}
 }
 
-// TestCreateDeploymentValidation verifies required field checks.
+func TestAPIKeyMiddlewareRejectsNoKey(t *testing.T) {
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 without key, got %d", w.Code)
+	}
+}
+
+func TestAPIKeyMiddlewareRejectsWrongKey(t *testing.T) {
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Header.Set("X-Api-Key", "wrong-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with wrong key, got %d", w.Code)
+	}
+}
+
+func TestAPIKeyMiddlewareBearerAuth(t *testing.T) {
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 with Bearer auth, got %d", w.Code)
+	}
+}
+
+func TestCORSHeaders(t *testing.T) {
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/health", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Error("expected CORS Allow-Origin header")
+	}
+	if w.Header().Get("Access-Control-Allow-Methods") == "" {
+		t.Error("expected CORS Allow-Methods header")
+	}
+}
+
 func TestCreateDeploymentValidation(t *testing.T) {
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
 	tests := []struct {
 		name   string
 		body   map[string]any
@@ -76,54 +143,90 @@ func TestCreateDeploymentValidation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Verify the validation logic inline (mirrors handlers.go checks)
-			modelID, _ := tc.body["model_id"].(string)
-			artifactURL, _ := tc.body["artifact_url"].(string)
-			artifactSHA256, _ := tc.body["artifact_sha256"].(string)
+			b, _ := json.Marshal(tc.body)
+			req := httptest.NewRequest(http.MethodPost, "/api/deployments", bytes.NewReader(b))
+			req.Header.Set("X-Api-Key", "test-key")
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
 
-			if modelID == "" || artifactURL == "" || artifactSHA256 == "" {
-				// This is the expected validation failure path
-				return
+			if w.Code != tc.expect {
+				body, _ := io.ReadAll(w.Body)
+				t.Errorf("expected %d, got %d: %s", tc.expect, w.Code, string(body))
 			}
-			t.Error("expected validation to catch missing field")
 		})
 	}
 }
 
-// TestAPIKeyMiddleware verifies unauthorized requests are rejected.
-func TestAPIKeyMiddleware(t *testing.T) {
-	tests := []struct {
-		name   string
-		header string
-		value  string
-		expect int
-	}{
-		{"no key", "", "", 401},
-		{"wrong key", "X-Api-Key", "wrong", 401},
-		{"correct key", "X-Api-Key", "test-key", 200},
-		{"bearer auth", "Authorization", "Bearer test-key", 200},
+func TestListArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	// Create a test artifact and sha256 sidecar
+	os.WriteFile(filepath.Join(dir, "test-model.tar.gz"), []byte("fake"), 0644)
+	os.WriteFile(filepath.Join(dir, "test-model.tar.gz.sha256"), []byte("abcdef123456"), 0644)
+
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	req.Header.Set("X-Api-Key", "test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			// The actual middleware check logic
-			key := "test-key"
-			got := tc.value
-			if tc.header == "Authorization" {
-				got = got[len("Bearer "):]
-			}
-			if tc.header == "" {
-				got = ""
-			}
+	var arts []map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&arts); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("expected 1 artifact, got %d", len(arts))
+	}
+	if arts[0]["name"] != "test-model" {
+		t.Errorf("expected name test-model, got %s", arts[0]["name"])
+	}
+	if arts[0]["sha256"] != "abcdef123456" {
+		t.Errorf("expected sha256 abcdef123456, got %s", arts[0]["sha256"])
+	}
+}
 
-			authenticated := got == key
-			if tc.expect == 200 && !authenticated {
-				t.Error("expected authenticated but was not")
-			}
-			if tc.expect == 401 && authenticated {
-				t.Error("expected unauthorized but was authenticated")
-			}
-		})
+func TestListArtifactsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	router := setupTestRouter(t, dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	req.Header.Set("X-Api-Key", "test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var arts []map[string]string
+	json.NewDecoder(w.Body).Decode(&arts)
+	if len(arts) != 0 {
+		t.Errorf("expected empty artifacts list, got %d", len(arts))
+	}
+}
+
+func TestArtifactFileServing(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte("model-binary-content")
+	os.WriteFile(filepath.Join(dir, "test.tar.gz"), content, 0644)
+
+	router := setupTestRouter(t, dir)
+
+	// Artifact endpoint should work without API key
+	req := httptest.NewRequest(http.MethodGet, "/artifacts/test.tar.gz", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Body.String() != string(content) {
+		t.Error("unexpected artifact content")
 	}
 }
 
