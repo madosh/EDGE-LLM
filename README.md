@@ -11,9 +11,17 @@ A control plane and device agent system for managing **edge AI deployments at sc
 Deploy models to devices by tag, watch each device download, verify the SHA-256, load the model, and stream live inference telemetry — all from an operator dashboard.
 
 ```
-Operator dashboard  ──REST──▶  Go control plane  ──gRPC/mTLS──▶  Rust edge agents
-                                   │                                   │
-                              Postgres + ClickHouse + NATS        LiteRT | Ollama | Stub
+┌──────────────────┐         ┌─────────────────────────┐         ┌────────────────────────┐
+│  Operator UI     │  REST   │     Control Plane       │  gRPC   │     Edge Agents        │
+│  (SvelteKit)     │────────▶│        (Go 1.23)        │────────▶│       (Rust)           │
+└──────────────────┘         └────────────┬────────────┘  mTLS   └───────────┬────────────┘
+                                          │                                  │
+                              ┌───────────┼───────────┐          ┌───────────┼───────────┐
+                              │           │           │          │           │           │
+                          ┌───▼───┐  ┌────▼────┐ ┌───▼──┐  ┌───▼───┐  ┌───▼───┐  ┌───▼──┐
+                          │Postgres│  │ClickHouse│ │ NATS │  │LiteRT │  │Ollama │  │ Stub │
+                          │  (state)│  │(telemetry)│ │(events)│  │       │  │       │  │      │
+                          └────────┘  └──────────┘ └──────┘  └───────┘  └───────┘  └──────┘
 ```
 
 ---
