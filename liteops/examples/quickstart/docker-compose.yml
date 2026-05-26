@@ -1,0 +1,49 @@
+version: "3.9"
+
+# LiteOps quickstart — adds Prometheus + Grafana on top of a running lit serve.
+# Usage:
+#   1. Start lit serve on port 8000 (see README)
+#   2. docker compose up -d
+#   3. Open http://localhost:3000 (Grafana admin/admin)
+#   4. Import dashboards/litert_fleet.json
+
+services:
+
+  # ── LiteOps observer sidecar ─────────────────────────────────────────────
+  liteops-observer:
+    build:
+      context: ../..
+      dockerfile: examples/quickstart/Dockerfile.observer
+    environment:
+      LITERT_URL:      "http://host.docker.internal:8000"
+      DEVICE_ID:       "quickstart-hub-01"
+      METRICS_PORT:    "9101"
+    ports:
+      - "9101:9101"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # ── Prometheus ────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # ── Grafana ───────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+    volumes:
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+      - ../../dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped

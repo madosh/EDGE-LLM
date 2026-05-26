@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY pyproject.toml .
+COPY liteops/ liteops/
+
+RUN pip install --no-cache-dir -e ".[dev]"
+
+# Minimal observer entrypoint — starts the Prometheus metrics server and
+# polls lit serve memory every 5 seconds for passive monitoring.
+COPY examples/quickstart/observer_entrypoint.py .
+
+CMD ["python", "observer_entrypoint.py"]

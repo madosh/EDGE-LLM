@@ -15,6 +15,51 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tracing::{info, warn};
 
+// ── LiteRT memory helper ─────────────────────────────────────────────────────
+
+/// Read the RSS memory of the process whose /proc/{pid}/cmdline contains `needle`.
+/// Returns 0.0 if the process cannot be found or /proc is unavailable (non-Linux).
+/// This fixes the `mem_mb: 0.0` placeholder — same data source as `htop`.
+fn find_litert_rss_mb(needle: &str) -> f32 {
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(entries) = std::fs::read_dir("/proc") else { return 0.0 };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let pid = name.to_string_lossy();
+            if !pid.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            let cmdline = match std::fs::read_to_string(format!("/proc/{pid}/cmdline")) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            if !cmdline.contains(needle) {
+                continue;
+            }
+            let status = match std::fs::read_to_string(format!("/proc/{pid}/status")) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            for line in status.lines() {
+                if line.starts_with("VmRSS:") {
+                    if let Some(kb) = line.split_whitespace().nth(1) {
+                        if let Ok(kb) = kb.parse::<f32>() {
+                            return kb / 1024.0; // kB → MB
+                        }
+                    }
+                }
+            }
+        }
+        0.0
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = needle;
+        0.0
+    }
+}
+
 // ── Runtime backend ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -227,14 +272,14 @@ async fn sample_telemetry_litert(litert_url: &str, model: &str) -> Telemetry {
                     Telemetry {
                         tps,
                         ttft_ms: ttft_ms.max(0.0),
-                        mem_mb: 0.0, // LiteRT doesn't expose memory via API
+                        mem_mb: find_litert_rss_mb("lit"),
                         status: "running".to_string(),
                     }
                 }
                 Err(_) => Telemetry {
                     tps: 0.0,
                     ttft_ms: elapsed.as_millis() as f32,
-                    mem_mb: 0.0,
+                    mem_mb: find_litert_rss_mb("lit"),
                     status: "running".to_string(),
                 },
             }
