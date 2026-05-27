@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiteOps — Mahmoud Elaskary · Personal Roadmap</title>
+<style>
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Design tokens ── */
+:root {
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface-2: #21262d;
+  --border:    #30363d;
+  --text:      #e6edf3;
+  --muted:     #8b949e;
+  --p1: #3fb950; --p1-dim: #1a3d21;
+  --p2: #58a6ff; --p2-dim: #1c2f45;
+  --p3: #bc8cff; --p3-dim: #2d1f4a;
+  --p4: #e3b341; --p4-dim: #3d2e10;
+  --p5: #f778ba; --p5-dim: #3d1a2f;
+  --p6: #39d353; --p6-dim: #0e3320;
+  --radius: 8px; --radius-lg: 14px;
+  --shadow: 0 4px 24px rgba(0,0,0,.45);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  font-size: 14px;
+}
+
+/* ── Layout helpers ── */
+.container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+.section    { padding: 56px 0; }
+.section + .section { border-top: 1px solid var(--border); }
+h2.section-title {
+  font-size: 22px; font-weight: 700; margin-bottom: 32px;
+  display: flex; align-items: center; gap: 10px; color: var(--text);
+}
+h2.section-title .icon { font-size: 20px; }
+
+/* ── Hero ── */
+.hero {
+  background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+  border-bottom: 1px solid var(--border); padding: 52px 0 40px;
+}
+.hero-inner { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+.hero h1   { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; }
+.hero h1 span { color: var(--p2); }
+.hero-sub  { color: var(--muted); margin-top: 6px; font-size: 15px; }
+.hero-meta { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.badge {
+  font-size: 12px; font-weight: 600; padding: 3px 10px;
+  border-radius: 20px; border: 1px solid;
+}
+.badge-green  { color: var(--p1); border-color: var(--p1); background: var(--p1-dim); }
+.badge-blue   { color: var(--p2); border-color: var(--p2); background: var(--p2-dim); }
+.badge-purple { color: var(--p3); border-color: var(--p3); background: var(--p3-dim); }
+.badge-amber  { color: var(--p4); border-color: var(--p4); background: var(--p4-dim); }
+.badge-pink   { color: var(--p5); border-color: var(--p5); background: var(--p5-dim); }
+.badge-teal   { color: var(--p6); border-color: var(--p6); background: var(--p6-dim); }
+.hero-stats { display: flex; gap: 32px; flex-wrap: wrap; }
+.stat { text-align: right; }
+.stat-num  { font-size: 28px; font-weight: 800; color: var(--p2); }
+.stat-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ── Skills grid ── */
+.skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.skill-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.skill-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.skill-name   { font-weight: 600; font-size: 13px; }
+.skill-level  { font-size: 12px; color: var(--muted); }
+.skill-bar    { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.skill-fill   { height: 100%; border-radius: 3px; transition: width .6s ease; }
+.skill-note   { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+
+/* ── Architecture diagram ── */
+.arch-diagram {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 32px; overflow-x: auto;
+}
+.arch-diagram svg { display: block; margin: 0 auto; width: 100%; max-width: 820px; }
+
+/* ── Gantt ── */
+.gantt-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.gantt-header {
+  display: grid; grid-template-columns: 160px repeat(7, 1fr);
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.gantt-header-label, .gantt-month {
+  padding: 10px 12px; font-size: 12px; font-weight: 600;
+  color: var(--muted); text-align: center;
+  border-right: 1px solid var(--border);
+}
+.gantt-header-label { text-align: left; }
+.gantt-row {
+  display: grid; grid-template-columns: 160px repeat(7, 1fr);
+  border-bottom: 1px solid var(--border);
+  align-items: center; min-height: 52px;
+}
+.gantt-row:last-child { border-bottom: none; }
+.gantt-label {
+  padding: 10px 14px; font-size: 13px; font-weight: 600;
+  border-right: 1px solid var(--border); display: flex;
+  flex-direction: column; gap: 2px;
+}
+.gantt-label-sub { font-size: 10px; font-weight: 400; color: var(--muted); }
+.gantt-track {
+  grid-column: 2 / -1; padding: 8px 6px;
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 0;
+  position: relative;
+}
+.gantt-bar {
+  height: 34px; border-radius: 6px; display: flex;
+  align-items: center; padding: 0 10px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+  overflow: hidden; position: relative;
+}
+.gantt-bar.done   { opacity: 1; }
+.gantt-bar.active { animation: pulse-bar 2s ease-in-out infinite; }
+@keyframes pulse-bar {
+  0%,100% { opacity:1; } 50% { opacity:.75; }
+}
+.gantt-now {
+  position: absolute; left: calc(14.28% * 1.2); top: 0; bottom: 0;
+  width: 2px; background: var(--p2); opacity: .6; pointer-events: none;
+}
+.gantt-now::before {
+  content: 'NOW'; position: absolute; top: -18px; left: 50%;
+  transform: translateX(-50%); font-size: 9px; font-weight: 700;
+  color: var(--p2);
+}
+
+/* ── Phase cards ── */
+.phases-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
+.phase-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+  transition: border-color .2s, transform .2s, box-shadow .2s;
+}
+.phase-card:hover {
+  transform: translateY(-2px); box-shadow: var(--shadow);
+}
+.phase-card-header {
+  padding: 18px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.phase-num {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; flex-shrink: 0;
+}
+.phase-title-block { flex: 1; margin-left: 12px; }
+.phase-name { font-size: 15px; font-weight: 700; }
+.phase-module { font-size: 11px; color: var(--muted); font-family: 'SFMono-Regular', Consolas, monospace; margin-top: 2px; }
+.phase-status {
+  font-size: 11px; font-weight: 700; padding: 3px 9px;
+  border-radius: 20px; border: 1px solid; flex-shrink: 0;
+}
+.phase-card-body { padding: 18px 20px; }
+
+/* Duration + estimate strip */
+.phase-meta-strip {
+  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.meta-chip {
+  font-size: 11px; font-weight: 600; padding: 3px 9px;
+  border-radius: 5px; background: var(--surface-2);
+  color: var(--muted); border: 1px solid var(--border);
+  display: flex; align-items: center; gap: 5px;
+}
+
+/* Skills used */
+.skills-used { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.skill-tag {
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+  border-radius: 4px; border: 1px solid transparent;
+}
+
+/* Tasks */
+.tasks-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.task-list { list-style: none; display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
+.task-item  { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.task-check { width: 16px; height: 16px; border-radius: 3px; border: 2px solid; flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; }
+.task-check.done { border-color: var(--p1); background: var(--p1); }
+.task-check.done::after { content: '✓'; color: #000; font-size: 10px; font-weight: 900; }
+.task-check.open { border-color: var(--border); }
+.task-text.done { text-decoration: line-through; color: var(--muted); }
+.task-pr {
+  font-size: 10px; font-weight: 600; margin-left: 4px;
+  padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border);
+  color: var(--muted); white-space: nowrap; vertical-align: middle;
+}
+
+/* Value I get */
+.value-box {
+  border-radius: var(--radius); padding: 12px 14px;
+  border: 1px solid;
+}
+.value-box-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.value-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.value-list li { font-size: 12px; display: flex; gap: 6px; }
+.value-list li::before { content: '→'; flex-shrink: 0; font-weight: 700; }
+
+/* ── Dependency diagram ── */
+.dep-diagram {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 32px; overflow-x: auto;
+}
+.dep-diagram svg { display: block; margin: 0 auto; }
+
+/* ── CV section ── */
+.cv-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 700px) { .cv-split { grid-template-columns: 1fr; } }
+.cv-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px;
+}
+.cv-card h3 { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.cv-before { border-left: 3px solid var(--border); }
+.cv-after  { border-left: 3px solid var(--p2); }
+.cv-quote {
+  font-size: 14px; line-height: 1.7; color: var(--text);
+  font-style: italic;
+}
+.cv-bullets { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.cv-bullets li {
+  font-size: 12px; line-height: 1.5; padding: 8px 10px;
+  background: var(--surface-2); border-radius: var(--radius);
+  border-left: 3px solid var(--p2);
+}
+
+/* ── Nav table ── */
+.nav-table { width: 100%; border-collapse: collapse; }
+.nav-table th, .nav-table td {
+  padding: 10px 14px; border: 1px solid var(--border);
+  text-align: left; font-size: 13px;
+}
+.nav-table th { background: var(--surface-2); font-weight: 700; color: var(--muted); }
+.nav-table td code {
+  font-size: 12px; background: var(--surface-2); padding: 2px 6px;
+  border-radius: 4px; color: var(--p2);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+/* ── Footer ── */
+.footer {
+  border-top: 1px solid var(--border); padding: 28px 0;
+  text-align: center; color: var(--muted); font-size: 12px;
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════ HERO ══════════════════════ -->
+<div class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div>
+        <h1>Lite<span>Ops</span> — My Roadmap</h1>
+        <p class="hero-sub">Mahmoud Sherif Elaskary · AI &amp; Software Engineer · Barcelona</p>
+        <div class="hero-meta">
+          <span class="badge badge-green">Phase 1 ✓ Done</span>
+          <span class="badge badge-blue">Phase 2 → Next</span>
+          <span class="badge badge-purple">6 Total Phases</span>
+          <span class="badge badge-amber">7-Month Plan</span>
+          <span class="badge badge-pink">PyPI Target</span>
+          <span class="badge badge-teal">LiteRT Upstream</span>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><div class="stat-num">6</div><div class="stat-label">Phases</div></div>
+        <div class="stat"><div class="stat-num">7</div><div class="stat-label">Months</div></div>
+        <div class="stat"><div class="stat-num">3</div><div class="stat-label">Upstream PRs</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SKILLS ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">🧠</span> My Skills — Honest Assessment</h2>
+    <div class="skills-grid">
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Production LLM Systems</span>
+          <span class="skill-level">★★★★★</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:96%;background:var(--p1)"></div></div>
+        <div class="skill-note">RAG from zero to production at Media-Markt Saturn. LangChain, LangGraph, OpenAI, Pinecone, LangFuse.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Observability &amp; Eval</span>
+          <span class="skill-level">★★★★★</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:95%;background:var(--p1)"></div></div>
+        <div class="skill-note">LangFuse, prompt versioning, token dashboards, drift detection. Caught silent regression in week 3.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">ServiceNow Architecture</span>
+          <span class="skill-level">★★★★★</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:93%;background:var(--p1)"></div></div>
+        <div class="skill-note">Production work at VOIS &amp; Schwarz Group. ITSM, CSM, CMDB, Flow Designer, Now Assist.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Python</span>
+          <span class="skill-level">★★★★★</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:95%;background:var(--p1)"></div></div>
+        <div class="skill-note">Primary language. 7+ years production. MicroPython path for ESP32 phase.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Cloud / DevOps</span>
+          <span class="skill-level">★★★★☆</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:80%;background:var(--p2)"></div></div>
+        <div class="skill-note">GCP Vertex AI, Docker, Kubernetes, CI/CD. Managed full deploy lifecycle at Media-Markt.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Data Pipelines</span>
+          <span class="skill-level">★★★★☆</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:78%;background:var(--p2)"></div></div>
+        <div class="skill-note">Spark + Kafka + Sqoop on Cloudera at CyberMAK and VOIS. ETL precursor to LLM ingestion.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Go (Control Plane)</span>
+          <span class="skill-level">★★☆☆☆</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:35%;background:var(--p4)"></div></div>
+        <div class="skill-note">Can read fluently, contribute targeted edits. Go is readable for a Python developer.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">Rust (Agent)</span>
+          <span class="skill-level">★★☆☆☆</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:30%;background:var(--p4)"></div></div>
+        <div class="skill-note">Read patterns, copy idioms, small fixes. Phase 1 delivered a Rust fix — proof it's enough to contribute.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">MicroPython / ESP32</span>
+          <span class="skill-level">★★★☆☆</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:55%;background:var(--p3)"></div></div>
+        <div class="skill-note">Maker background (Cairo Maker Fair). Python familiar. MicroPython is the right ESP32 entry path.</div>
+      </div>
+
+      <div class="skill-card">
+        <div class="skill-header">
+          <span class="skill-name">C / FreeRTOS</span>
+          <span class="skill-level">★★☆☆☆</span>
+        </div>
+        <div class="skill-bar"><div class="skill-fill" style="width:28%;background:var(--p5)"></div></div>
+        <div class="skill-note">Maker background only. Phase 5 uses MicroPython first. C/FreeRTOS is a Phase 7+ investment.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ ARCHITECTURE ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">🏗️</span> System Architecture</h2>
+    <div class="arch-diagram">
+      <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+
+        <!-- Cloud box -->
+        <rect x="160" y="10" width="500" height="88" rx="10" fill="#1c2f45" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="410" y="35" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" letter-spacing="1">CLOUD LAYER</text>
+        <text x="410" y="54" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Cami Fleet Control Plane</text>
+        <text x="410" y="72" text-anchor="middle" fill="#8b949e" font-size="10">REST API · gRPC · PostgreSQL · ClickHouse · Prometheus · Grafana</text>
+        <!-- ServiceNow badge -->
+        <rect x="620" y="16" width="36" height="18" rx="4" fill="#3d2e10" stroke="#e3b341" stroke-width="1"/>
+        <text x="638" y="29" text-anchor="middle" fill="#e3b341" font-size="8" font-weight="700">SN Ph3</text>
+
+        <!-- Arrow down to hub -->
+        <line x1="410" y1="98" x2="410" y2="138" stroke="#30363d" stroke-width="2"/>
+        <polygon points="410,142 404,130 416,130" fill="#30363d"/>
+        <text x="422" y="122" fill="#8b949e" font-size="10">gRPC / mTLS</text>
+
+        <!-- Hub box -->
+        <rect x="120" y="144" width="580" height="96" rx="10" fill="#21262d" stroke="#3fb950" stroke-width="1.5"/>
+        <text x="410" y="166" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700" letter-spacing="1">HUB LAYER</text>
+        <text x="410" y="185" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Smart Hub — Raspberry Pi 5 / Jetson Nano</text>
+
+        <!-- LiteRT box inside hub -->
+        <rect x="134" y="192" width="148" height="36" rx="6" fill="#1a3d21" stroke="#3fb950" stroke-width="1"/>
+        <text x="208" y="208" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="700">LiteRT (lit serve)</text>
+        <text x="208" y="221" text-anchor="middle" fill="#8b949e" font-size="9">Gemini API · port 8000</text>
+
+        <!-- Observer badge -->
+        <rect x="296" y="192" width="140" height="36" rx="6" fill="#1c2f45" stroke="#58a6ff" stroke-width="1"/>
+        <text x="366" y="208" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="700">LiteOps Observer</text>
+        <text x="366" y="221" text-anchor="middle" fill="#8b949e" font-size="9">mem · latency · tokens  Ph1✓</text>
+
+        <!-- Router badge -->
+        <rect x="450" y="192" width="130" height="36" rx="6" fill="#2d1f4a" stroke="#bc8cff" stroke-width="1"/>
+        <text x="515" y="208" text-anchor="middle" fill="#bc8cff" font-size="10" font-weight="700">LangGraph Router</text>
+        <text x="515" y="221" text-anchor="middle" fill="#8b949e" font-size="9">classify · route  Ph4</text>
+
+        <!-- MQTT badge -->
+        <rect x="594" y="192" width="94" height="36" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+        <text x="641" y="208" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="700">MQTT Broker</text>
+        <text x="641" y="221" text-anchor="middle" fill="#8b949e" font-size="9">Mosquitto · 1883</text>
+
+        <!-- Arrows to ESP32 -->
+        <line x1="240" y1="240" x2="150" y2="278" stroke="#30363d" stroke-width="1.5"/>
+        <line x1="410" y1="240" x2="410" y2="278" stroke="#30363d" stroke-width="1.5"/>
+        <line x1="580" y1="240" x2="670" y2="278" stroke="#30363d" stroke-width="1.5"/>
+        <polygon points="150,282 145,270 156,270" fill="#30363d"/>
+        <polygon points="410,282 404,270 416,270" fill="#30363d"/>
+        <polygon points="670,282 665,270 676,270" fill="#30363d"/>
+        <text x="280" y="268" fill="#8b949e" font-size="9" text-anchor="middle">WiFi / MQTT</text>
+
+        <!-- ESP32 boxes -->
+        <rect x="60" y="284" width="160" height="78" rx="8" fill="#3d1a2f" stroke="#f778ba" stroke-width="1.5"/>
+        <text x="140" y="305" text-anchor="middle" fill="#f778ba" font-size="10" font-weight="700">ESP32-S3 Node</text>
+        <text x="140" y="320" text-anchor="middle" fill="#8b949e" font-size="9">MicroPython · Phase 5</text>
+        <text x="140" y="334" text-anchor="middle" fill="#8b949e" font-size="9">MQTT client · sensors</text>
+        <text x="140" y="348" text-anchor="middle" fill="#8b949e" font-size="9">OTA from hub</text>
+
+        <rect x="330" y="284" width="160" height="78" rx="8" fill="#3d1a2f" stroke="#f778ba" stroke-width="1.5"/>
+        <text x="410" y="305" text-anchor="middle" fill="#f778ba" font-size="10" font-weight="700">ESP32-S3 Node</text>
+        <text x="410" y="320" text-anchor="middle" fill="#8b949e" font-size="9">MicroPython · Phase 5</text>
+        <text x="410" y="334" text-anchor="middle" fill="#8b949e" font-size="9">MQTT client · actuators</text>
+        <text x="410" y="348" text-anchor="middle" fill="#8b949e" font-size="9">OTA from hub</text>
+
+        <rect x="600" y="284" width="160" height="78" rx="8" fill="#3d1a2f" stroke="#f778ba" stroke-width="1.5"/>
+        <text x="680" y="305" text-anchor="middle" fill="#f778ba" font-size="10" font-weight="700">ESP32-CAM</text>
+        <text x="680" y="320" text-anchor="middle" fill="#8b949e" font-size="9">MicroPython · Phase 5</text>
+        <text x="680" y="334" text-anchor="middle" fill="#8b949e" font-size="9">MQTT · vision stream</text>
+        <text x="680" y="348" text-anchor="middle" fill="#8b949e" font-size="9">OTA from hub</text>
+
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ GANTT ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">📅</span> Project Timeline — 7 Months</h2>
+    <div class="gantt-wrap">
+
+      <!-- Header -->
+      <div class="gantt-header">
+        <div class="gantt-header-label">Phase</div>
+        <div class="gantt-month">Month 1<br><span style="font-weight:400;font-size:10px">Wk 1–4</span></div>
+        <div class="gantt-month">Month 2<br><span style="font-weight:400;font-size:10px">Wk 5–8</span></div>
+        <div class="gantt-month">Month 3<br><span style="font-weight:400;font-size:10px">Wk 9–12</span></div>
+        <div class="gantt-month">Month 4<br><span style="font-weight:400;font-size:10px">Wk 13–16</span></div>
+        <div class="gantt-month">Month 5<br><span style="font-weight:400;font-size:10px">Wk 17–20</span></div>
+        <div class="gantt-month">Month 6<br><span style="font-weight:400;font-size:10px">Wk 21–24</span></div>
+        <div class="gantt-month" style="border-right:none">Month 7<br><span style="font-weight:400;font-size:10px">Wk 25–28</span></div>
+      </div>
+
+      <!-- Phase 1 -->
+      <div class="gantt-row">
+        <div class="gantt-label" style="border-color:var(--p1)">
+          <span>Ph 1 — Observer</span>
+          <span class="gantt-label-sub">3 weeks · ✅ Done</span>
+        </div>
+        <div class="gantt-track">
+          <div style="grid-column:1/2;padding:4px 3px">
+            <div class="gantt-bar done" style="background:var(--p1);color:#000;width:75%">
+              observer.py
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 2 -->
+      <div class="gantt-row">
+        <div class="gantt-label" style="border-color:var(--p2)">
+          <span>Ph 2 — Evaluator</span>
+          <span class="gantt-label-sub">3 weeks · 🔜 Next</span>
+        </div>
+        <div class="gantt-track">
+          <div style="grid-column:1/2;padding:4px 3px">
+            <div class="gantt-bar active" style="background:var(--p2);color:#000;margin-left:75%;width:25%">
+            </div>
+          </div>
+          <div style="grid-column:2/3;padding:4px 3px">
+            <div class="gantt-bar active" style="background:var(--p2);color:#000;width:50%">
+              evaluator.py
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 3 -->
+      <div class="gantt-row">
+        <div class="gantt-label" style="border-color:var(--p3)">
+          <span>Ph 3 — ServiceNow</span>
+          <span class="gantt-label-sub">3 weeks · 📋 Planned</span>
+        </div>
+        <div class="gantt-track">
+          <div style="grid-column:2/3;padding:4px 3px;margin-left:50%">
+            <div class="gantt-bar" style="background:var(--p3);color:#000;width:50%"></div>
+          </div>
+          <div style="grid-column:3/4;padding:4px 3px">
+            <div class="gantt-bar" style="background:var(--p3);color:#fff;width:50%">
+              servicenow.py
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 4 -->
+      <div class="gantt-row">
+        <div class="gantt-label" style="border-color:var(--p4)">
+          <span>Ph 4 — LangGraph Router</span>
+          <span class="gantt-label-sub">3 weeks · 📋 Planned</span>
+        </div>
+        <div class="gantt-track">
+          <div style="grid-column:3/4;padding:4px 3px;margin-left:50%">
+            <div class="gantt-bar" style="background:var(--p4);color:#000;width:50%"></div>
+          </div>
+          <div style="grid-column:4/5;padding:4px 3px">
+            <div class="gantt-bar" style="background:var(--p4);color:#000;width:50%">
+              router.py
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 5 -->
+      <div class="gantt-row">
+        <div class="gantt-label" style="border-color:var(--p5)">
+          <span>Ph 5 — ESP32 Agent</span>
+          <span class="gantt-label-sub">5 weeks · 📋 Planned</span>
+        </div>
+        <div class="gantt-track">
+          <div style="grid-column:4/5;padding:4px 3px;margin-left:50%">
+            <div class="gantt-bar" style="background:var(--p5);color:#fff;width:50%"></div>
+          </div>
+          <div style="grid-column:5/7;padding:4px 3px">
+            <div class="gantt-bar" style="background:var(--p5);color:#fff">
+              liteops_esp32 · MicroPython
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 6 -->
+      <div class="gantt-row">
+        <div class="gantt-label" style="border-color:var(--p6)">
+          <span>Ph 6 — LiteRT Upstream</span>
+          <span class="gantt-label-sub">7 weeks · 📋 Planned</span>
+        </div>
+        <div class="gantt-track">
+          <div style="grid-column:6/8;padding:4px 3px">
+            <div class="gantt-bar" style="background:var(--p6);color:#000">
+              PR merged · pip publish · conference
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ PHASE CARDS ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">📦</span> Phase Detail — Tasks &amp; Value</h2>
+    <div class="phases-grid">
+
+      <!-- ── Phase 1 ── -->
+      <div class="phase-card" style="border-color:var(--p1)">
+        <div class="phase-card-header">
+          <div class="phase-num" style="background:var(--p1-dim);color:var(--p1)">1</div>
+          <div class="phase-title-block">
+            <div class="phase-name">Observer</div>
+            <div class="phase-module">liteops/liteops/observer.py</div>
+          </div>
+          <div class="phase-status badge-green">✅ Done</div>
+        </div>
+        <div class="phase-card-body">
+          <div class="phase-meta-strip">
+            <div class="meta-chip">⏱ 3 weeks</div>
+            <div class="meta-chip">🐍 Python</div>
+            <div class="meta-chip">🦀 Rust fix</div>
+          </div>
+          <div class="skills-used">
+            <span class="skill-tag" style="background:var(--p1-dim);color:var(--p1);border-color:var(--p1)">Observability</span>
+            <span class="skill-tag" style="background:var(--p2-dim);color:var(--p2);border-color:var(--p2)">Prometheus</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">psutil</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">Grafana</span>
+          </div>
+          <div class="tasks-title">Tasks</div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">LiteRTObserver class — wraps generateContent, reads psutil RSS</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">5 Prometheus metrics (RSS, peak, latency, tokens, requests)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">11 tests in tests/test_observer.py</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">Grafana dashboard — 5 panels (dashboards/litert_fleet.json)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">docker-compose quickstart (observer + Prometheus + Grafana)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">Rust fix: mem_mb 0.0 → find_litert_rss_mb() in agent<span class="task-pr">Cami Fleet PR</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check done"></div>
+              <span class="task-text done">docs/phases/phase-1-observer.md</span>
+            </li>
+          </ul>
+          <div class="value-box" style="background:var(--p1-dim);border-color:var(--p1)">
+            <div class="value-box-title" style="color:var(--p1)">Value I get</div>
+            <ul class="value-list">
+              <li>First concrete artifact in LiteRT ecosystem with my name on it</li>
+              <li>Screenshot: real Grafana memory panel — opening image of blog post #1</li>
+              <li>Grounds the upstream LiteRT issue: "I built the workaround, here is the data"</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Phase 2 ── -->
+      <div class="phase-card" style="border-color:var(--p2)">
+        <div class="phase-card-header">
+          <div class="phase-num" style="background:var(--p2-dim);color:var(--p2)">2</div>
+          <div class="phase-title-block">
+            <div class="phase-name">Evaluator</div>
+            <div class="phase-module">liteops/liteops/evaluator.py</div>
+          </div>
+          <div class="phase-status badge-blue">🔜 Next</div>
+        </div>
+        <div class="phase-card-body">
+          <div class="phase-meta-strip">
+            <div class="meta-chip">⏱ 3 weeks</div>
+            <div class="meta-chip">🐍 Python</div>
+            <div class="meta-chip">🔁 Auto-rollback</div>
+          </div>
+          <div class="skills-used">
+            <span class="skill-tag" style="background:var(--p1-dim);color:var(--p1);border-color:var(--p1)">LLM Eval</span>
+            <span class="skill-tag" style="background:var(--p1-dim);color:var(--p1);border-color:var(--p1)">LangFuse mindset</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">Quality gates</span>
+          </div>
+          <div class="tasks-title">Tasks</div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">EdgeEvaluator class — runs question bank against deployed model</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">eval/question_bank.json — format + 20 sample questions</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Quality score + grounding check per answer</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Auto-rollback trigger if score &lt; threshold after OTA<span class="task-pr">Cami Fleet PR</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">8+ tests in tests/test_evaluator.py</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">LiteRT issue #2: evaluation webhook request<span class="task-pr">LiteRT issue</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Blog post #1: "Closing the observability gap in LiteRT"</span>
+            </li>
+          </ul>
+          <div class="value-box" style="background:var(--p2-dim);border-color:var(--p2)">
+            <div class="value-box-title" style="color:var(--p2)">Value I get</div>
+            <ul class="value-list">
+              <li>Closes a real gap: edge models now fail deployments instead of silently degrading</li>
+              <li>CV claim: "Automatic quality gates for edge AI that roll back bad OTA updates"</li>
+              <li>My Media-Markt war story becomes the documentation — genuine authority</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Phase 3 ── -->
+      <div class="phase-card" style="border-color:var(--p3)">
+        <div class="phase-card-header">
+          <div class="phase-num" style="background:var(--p3-dim);color:var(--p3)">3</div>
+          <div class="phase-title-block">
+            <div class="phase-name">ServiceNow Bridge</div>
+            <div class="phase-module">liteops/connectors/servicenow.py</div>
+          </div>
+          <div class="phase-status badge-purple">📋 Planned</div>
+        </div>
+        <div class="phase-card-body">
+          <div class="phase-meta-strip">
+            <div class="meta-chip">⏱ 3 weeks</div>
+            <div class="meta-chip">🐍 Python</div>
+            <div class="meta-chip">⚡ Unique angle</div>
+          </div>
+          <div class="skills-used">
+            <span class="skill-tag" style="background:var(--p3-dim);color:var(--p3);border-color:var(--p3)">ServiceNow Expert</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">CMDB</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">REST APIs</span>
+          </div>
+          <div class="tasks-title">Tasks</div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">ServiceNowConnector: device offline → P3 incident</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">SHA-256 mismatch → P1 security incident</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">CMDB sync: Cami Fleet registry → SN CI table</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">FastAPI webhook receiver (liteops/webhook_server.py)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Expand webhook.go payload (add model_id, hub_id)<span class="task-pr">Cami Fleet PR</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">examples/enterprise/ — full integration demo</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Blog post #3: "ServiceNow meets edge AI fleet management"</span>
+            </li>
+          </ul>
+          <div class="value-box" style="background:var(--p3-dim);border-color:var(--p3)">
+            <div class="value-box-title" style="color:var(--p3)">Value I get</div>
+            <ul class="value-list">
+              <li>The contribution nobody else in open-source edge AI can build</li>
+              <li>Makes LiteOps deployable inside enterprise IT governance — real adoption driver</li>
+              <li>Talk slot at Now Create or ServiceNow user group</li>
+              <li>Proof of advanced ServiceNow architecture alongside CAD &amp; CTA certs</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Phase 4 ── -->
+      <div class="phase-card" style="border-color:var(--p4)">
+        <div class="phase-card-header">
+          <div class="phase-num" style="background:var(--p4-dim);color:var(--p4)">4</div>
+          <div class="phase-title-block">
+            <div class="phase-name">LangGraph Hub Router</div>
+            <div class="phase-module">liteops/liteops/router.py</div>
+          </div>
+          <div class="phase-status badge-amber">📋 Planned</div>
+        </div>
+        <div class="phase-card-body">
+          <div class="phase-meta-strip">
+            <div class="meta-chip">⏱ 3 weeks</div>
+            <div class="meta-chip">🐍 Python</div>
+            <div class="meta-chip">🦀 Small Rust edit</div>
+          </div>
+          <div class="skills-used">
+            <span class="skill-tag" style="background:var(--p4-dim);color:var(--p4);border-color:var(--p4)">LangGraph</span>
+            <span class="skill-tag" style="background:var(--p4-dim);color:var(--p4);border-color:var(--p4)">Agentic routing</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">LangChain</span>
+          </div>
+          <div class="tasks-title">Tasks</div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">build_hub_router() — LangGraph graph with classify node</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">classify: inference / sensor_read / fleet_command / aggregate</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">route_to_litert and route_to_leaf handlers</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">aggregate node: merge multi-ESP32 responses</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Hub mode flag in Rust agent (--hub-mode)<span class="task-pr">Cami Fleet PR</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">tests/test_router.py — 8+ tests</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Blog post #2: "LangGraph on a Raspberry Pi"</span>
+            </li>
+          </ul>
+          <div class="value-box" style="background:var(--p4-dim);border-color:var(--p4)">
+            <div class="value-box-title" style="color:var(--p4)">Value I get</div>
+            <ul class="value-list">
+              <li>Applies my biggest Media-Markt win (classify before retrieve) to hardware routing</li>
+              <li>Bridges LangGraph devs and hardware makers — highest-reach blog post potential</li>
+              <li>Demonstrates production AI patterns beyond the cloud environment</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Phase 5 ── -->
+      <div class="phase-card" style="border-color:var(--p5)">
+        <div class="phase-card-header">
+          <div class="phase-num" style="background:var(--p5-dim);color:var(--p5)">5</div>
+          <div class="phase-title-block">
+            <div class="phase-name">MicroPython ESP32 Agent</div>
+            <div class="phase-module">liteops/liteops_esp32/agent.py</div>
+          </div>
+          <div class="phase-status badge-pink">📋 Planned</div>
+        </div>
+        <div class="phase-card-body">
+          <div class="phase-meta-strip">
+            <div class="meta-chip">⏱ 5 weeks</div>
+            <div class="meta-chip">🐍 MicroPython</div>
+            <div class="meta-chip">🔧 ~$124 hardware</div>
+          </div>
+          <div class="skills-used">
+            <span class="skill-tag" style="background:var(--p5-dim);color:var(--p5);border-color:var(--p5)">MicroPython</span>
+            <span class="skill-tag" style="background:var(--p5-dim);color:var(--p5);border-color:var(--p5)">MQTT</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">Maker background</span>
+          </div>
+          <div class="tasks-title">Tasks</div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Buy: Raspberry Pi 5 (8GB) + 3× ESP32-S3-DevKitC-1 N16R8</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">LiteOpsAgent — WiFi, MQTT connect, register on boot</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Heartbeat loop (10s) + telemetry loop (5s)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">OTA handler: receive URL → download → verify SHA256 → reboot</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Hub MQTT bridge — proxy ESP32 registrations upstream (liteops/hub_bridge.py)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">docs/mqtt-protocol.md — MQTT topic schema</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Demo video: power on ESP32 → register → model deploys → SN incident fires</span>
+            </li>
+          </ul>
+          <div class="value-box" style="background:var(--p5-dim);border-color:var(--p5)">
+            <div class="value-box-title" style="color:var(--p5)">Value I get</div>
+            <ul class="value-list">
+              <li>Physical proof the full stack works end-to-end on real hardware</li>
+              <li>90-second demo video = the entire project in one artifact</li>
+              <li>MicroPython first → reading C/FreeRTOS examples becomes easy (Phase 7+)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Phase 6 ── -->
+      <div class="phase-card" style="border-color:var(--p6)">
+        <div class="phase-card-header">
+          <div class="phase-num" style="background:var(--p6-dim);color:var(--p6)">6</div>
+          <div class="phase-title-block">
+            <div class="phase-name">LiteRT Upstream + Publish</div>
+            <div class="phase-module">google-ai-edge/LiteRT · PyPI</div>
+          </div>
+          <div class="phase-status badge-teal">📋 Planned</div>
+        </div>
+        <div class="phase-card-body">
+          <div class="phase-meta-strip">
+            <div class="meta-chip">⏱ 7 weeks</div>
+            <div class="meta-chip">🌐 Upstream PRs</div>
+            <div class="meta-chip">📦 pip publish</div>
+          </div>
+          <div class="skills-used">
+            <span class="skill-tag" style="background:var(--p6-dim);color:var(--p6);border-color:var(--p6)">All phases combined</span>
+            <span class="skill-tag" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)">OSS contribution</span>
+          </div>
+          <div class="tasks-title">Tasks</div>
+          <ul class="task-list">
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">LiteRT issue #1: /v1beta/runtime/metrics endpoint request<span class="task-pr">LiteRT issue</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">LiteRT PR: implement runtime metrics API in lit serve<span class="task-pr">LiteRT PR</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">LiteRT PR: MicroPython integration guide in official docs<span class="task-pr">LiteRT PR</span></span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">pip publish: pip install liteops on PyPI</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Grafana dashboard published on grafana.com</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Conference talk submission (Now Create / AI Edge summit)</span>
+            </li>
+            <li class="task-item">
+              <div class="task-check open"></div>
+              <span class="task-text">Open issues: STM32, nRF52, Zigbee — attract contributors</span>
+            </li>
+          </ul>
+          <div class="value-box" style="background:var(--p6-dim);border-color:var(--p6)">
+            <div class="value-box-title" style="color:var(--p6)">Value I get</div>
+            <ul class="value-list">
+              <li>My name in Google's edge AI project commit history</li>
+              <li>"Upstream contributor to google-ai-edge/LiteRT" — strongest CV line</li>
+              <li>pip install liteops — anyone can use my work in 30 seconds</li>
+              <li>Community: others contribute STM32, nRF52 variants that I mentor</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /phases-grid -->
+  </div>
+</div>
+
+<!-- ══════════════════════ DEPENDENCY DIAGRAM ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">🔗</span> Phase Dependencies — How Each Phase Enables the Next</h2>
+    <div class="dep-diagram">
+      <svg viewBox="0 0 820 240" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+
+        <!-- Phase nodes -->
+        <!-- P1 -->
+        <rect x="20"  y="90" width="110" height="60" rx="8" fill="#1a3d21" stroke="#3fb950" stroke-width="2"/>
+        <text x="75"  y="115" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">Phase 1</text>
+        <text x="75"  y="130" text-anchor="middle" fill="#e6edf3" font-size="10">Observer</text>
+        <text x="75"  y="144" text-anchor="middle" fill="#8b949e" font-size="9">✅ Done</text>
+
+        <!-- P2 -->
+        <rect x="175" y="90" width="110" height="60" rx="8" fill="#1c2f45" stroke="#58a6ff" stroke-width="2"/>
+        <text x="230" y="115" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">Phase 2</text>
+        <text x="230" y="130" text-anchor="middle" fill="#e6edf3" font-size="10">Evaluator</text>
+        <text x="230" y="144" text-anchor="middle" fill="#8b949e" font-size="9">🔜 Next</text>
+
+        <!-- P3 -->
+        <rect x="330" y="90" width="110" height="60" rx="8" fill="#2d1f4a" stroke="#bc8cff" stroke-width="2"/>
+        <text x="385" y="115" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="700">Phase 3</text>
+        <text x="385" y="130" text-anchor="middle" fill="#e6edf3" font-size="10">ServiceNow</text>
+        <text x="385" y="144" text-anchor="middle" fill="#8b949e" font-size="9">📋 Planned</text>
+
+        <!-- P4 -->
+        <rect x="485" y="90" width="110" height="60" rx="8" fill="#3d2e10" stroke="#e3b341" stroke-width="2"/>
+        <text x="540" y="115" text-anchor="middle" fill="#e3b341" font-size="11" font-weight="700">Phase 4</text>
+        <text x="540" y="130" text-anchor="middle" fill="#e6edf3" font-size="10">LangGraph</text>
+        <text x="540" y="144" text-anchor="middle" fill="#8b949e" font-size="9">📋 Planned</text>
+
+        <!-- P5 -->
+        <rect x="485" y="170" width="110" height="60" rx="8" fill="#3d1a2f" stroke="#f778ba" stroke-width="2"/>
+        <text x="540" y="195" text-anchor="middle" fill="#f778ba" font-size="11" font-weight="700">Phase 5</text>
+        <text x="540" y="210" text-anchor="middle" fill="#e6edf3" font-size="10">ESP32</text>
+        <text x="540" y="224" text-anchor="middle" fill="#8b949e" font-size="9">📋 Planned</text>
+
+        <!-- P6 -->
+        <rect x="680" y="90" width="120" height="60" rx="8" fill="#0e3320" stroke="#39d353" stroke-width="2"/>
+        <text x="740" y="115" text-anchor="middle" fill="#39d353" font-size="11" font-weight="700">Phase 6</text>
+        <text x="740" y="130" text-anchor="middle" fill="#e6edf3" font-size="10">LiteRT Upstream</text>
+        <text x="740" y="144" text-anchor="middle" fill="#8b949e" font-size="9">📋 Planned</text>
+
+        <!-- Arrows -->
+        <!-- P1 → P2 -->
+        <line x1="130" y1="120" x2="172" y2="120" stroke="#30363d" stroke-width="2"/>
+        <polygon points="175,120 165,115 165,125" fill="#30363d"/>
+
+        <!-- P2 → P3 -->
+        <line x1="285" y1="120" x2="327" y2="120" stroke="#30363d" stroke-width="2"/>
+        <polygon points="330,120 320,115 320,125" fill="#30363d"/>
+
+        <!-- P3 → P4 -->
+        <line x1="440" y1="120" x2="482" y2="120" stroke="#30363d" stroke-width="2"/>
+        <polygon points="485,120 475,115 475,125" fill="#30363d"/>
+
+        <!-- P3 → P5 (diagonal) -->
+        <line x1="440" y1="140" x2="482" y2="185" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <polygon points="485,187 476,178 484,175" fill="#30363d"/>
+
+        <!-- P4 → P6 -->
+        <line x1="595" y1="120" x2="677" y2="120" stroke="#30363d" stroke-width="2"/>
+        <polygon points="680,120 670,115 670,125" fill="#30363d"/>
+
+        <!-- P5 → P6 -->
+        <line x1="595" y1="185" x2="677" y2="145" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <polygon points="680,143 672,152 678,159" fill="#30363d"/>
+
+        <!-- Upstream labels -->
+        <text x="153"  y="108" text-anchor="middle" fill="#8b949e" font-size="9">enables</text>
+        <text x="308"  y="108" text-anchor="middle" fill="#8b949e" font-size="9">enables</text>
+        <text x="462"  y="108" text-anchor="middle" fill="#8b949e" font-size="9">enables</text>
+        <text x="637"  y="108" text-anchor="middle" fill="#8b949e" font-size="9">enables</text>
+
+        <!-- Side labels for LiteRT issue/PR -->
+        <text x="75"  y="70" text-anchor="middle" fill="#8b949e" font-size="9">↑ LiteRT issue #1</text>
+        <text x="230" y="70" text-anchor="middle" fill="#8b949e" font-size="9">↑ LiteRT issue #2</text>
+        <text x="540" y="70" text-anchor="middle" fill="#8b949e" font-size="9">↑ Cami Fleet PR</text>
+        <text x="740" y="70" text-anchor="middle" fill="#39d353" font-size="9" font-weight="700">↑ LiteRT PR merged</text>
+
+        <!-- Vertical arrows to LiteRT issues -->
+        <line x1="75"  y1="90" x2="75"  y2="76" stroke="#30363d" stroke-width="1" stroke-dasharray="3,2"/>
+        <line x1="230" y1="90" x2="230" y2="76" stroke="#30363d" stroke-width="1" stroke-dasharray="3,2"/>
+        <line x1="540" y1="90" x2="540" y2="76" stroke="#30363d" stroke-width="1" stroke-dasharray="3,2"/>
+        <line x1="740" y1="90" x2="740" y2="76" stroke="#39d353" stroke-width="1.5" stroke-dasharray="3,2"/>
+
+        <!-- LiteRT upstream bar -->
+        <rect x="20" y="20" width="780" height="22" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <text x="410" y="35" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">google-ai-edge/LiteRT upstream contributions track</text>
+
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ CV POSITIONING ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">📄</span> CV Positioning — Before &amp; After</h2>
+    <div class="cv-split">
+      <div class="cv-card cv-before">
+        <h3>Before this project</h3>
+        <p class="cv-quote">"Senior AI engineer with LLM systems and ServiceNow experience."</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:12px">Generic. Hard to differentiate from hundreds of other AI engineers.</p>
+      </div>
+      <div class="cv-card cv-after">
+        <h3>After this project</h3>
+        <p class="cv-quote">"The person who built the production operations bridge between Google's LiteRT, enterprise IT governance, and IoT hardware — and shipped it as an open-source package."</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:12px">Specific. Verifiable. No one else has this combination.</p>
+      </div>
+    </div>
+    <div class="cv-card" style="margin-top:20px;border-color:var(--p2)">
+      <h3 style="color:var(--p2)">CV bullet points — ready to paste</h3>
+      <ul class="cv-bullets">
+        <li>Built <strong>LiteOps</strong> — open-source production observability framework for Google's LiteRT, fixing the hardcoded <code>mem_mb: 0.0</code> present in every unmonitored LiteRT deployment. Prometheus metrics, p50/p95/p99 latency, tokens/min, quality score. (<em>pip install liteops</em>)</li>
+        <li>Implemented <strong>automatic quality gates</strong> for edge model deployments: runs a question bank against each deployed model, scores output quality, and triggers OTA rollback if quality drops below threshold — preventing silent regressions.</li>
+        <li>Built <strong>ServiceNow integration bridge</strong> for edge AI fleet events: device offline → P2/P3 incident, SHA-256 mismatch → P1 security incident, device registry → CMDB CI sync. Makes LiteRT deployable inside enterprise IT governance.</li>
+        <li>Deployed <strong>LangGraph query router on Raspberry Pi hub</strong>: classifies incoming requests and routes inference to LiteRT or sensor reads to specific ESP32-S3 leaf nodes — applying production routing patterns from enterprise RAG to edge hardware.</li>
+        <li>Wrote <strong>MicroPython MQTT agent for ESP32-S3</strong>: register, heartbeat, telemetry, and OTA updates in ~150 lines. Demonstrated full fleet lifecycle from hardware power-on to cloud dashboard.</li>
+        <li><strong>Upstream contributor to google-ai-edge/LiteRT</strong>: implemented <code>/v1beta/runtime/metrics</code> endpoint (PR merged); authored MicroPython integration guide in official docs.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ NAVIGATION ══════════════════════ -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title"><span class="icon">🗺️</span> Navigation — Where Everything Is</h2>
+    <table class="nav-table">
+      <thead>
+        <tr>
+          <th>I want to…</th>
+          <th>File / location</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Understand the full project concept</td><td><code>docs/liteops-project.md</code></td></tr>
+        <tr><td>See my personal plan + skill map</td><td><code>liteops/MY_PLAN.md</code></td></tr>
+        <tr><td>See this visual roadmap</td><td><code>liteops/docs/roadmap.html</code> ← you are here</td></tr>
+        <tr><td>See general Cami Fleet contribution strategy</td><td><code>ROADMAP.md</code></td></tr>
+        <tr><td>Write Phase 1 code</td><td><code>liteops/liteops/observer.py</code></td></tr>
+        <tr><td>Write Phase 2 code (next)</td><td><code>liteops/liteops/evaluator.py</code> — create this file</td></tr>
+        <tr><td>Read Phase 1 detailed docs</td><td><code>liteops/docs/phases/phase-1-observer.md</code></td></tr>
+        <tr><td>Run Phase 1 tests</td><td><code>cd liteops &amp;&amp; pip install -e ".[dev]" &amp;&amp; pytest -v</code></td></tr>
+        <tr><td>Start the Grafana/Prometheus stack</td><td><code>cd liteops/examples/quickstart &amp;&amp; docker compose up -d</code></td></tr>
+        <tr><td>Check PR conventions</td><td><code>liteops/CONTRIBUTING.md</code></td></tr>
+        <tr><td>Open LiteRT upstream issues</td><td>Use templates in <code>docs/liteops-project.md</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════ FOOTER ══════════════════════ -->
+<div class="footer">
+  <div class="container">
+    LiteOps — Mahmoud Sherif Elaskary · Phase 1 complete · Phase 2 starting ·
+    <a href="https://github.com/madosh/EDGE-LLM" style="color:var(--p2)">madosh/EDGE-LLM</a>
+  </div>
+</div>
+
+</body>
+</html>
