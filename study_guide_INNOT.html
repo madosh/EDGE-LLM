@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cami Fleet — Kata &amp; Practice Guide</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121a33; --panel2:#0f1730; --ink:#e6ecff; --mut:#9fb0d6;
+    --acc:#6366f1; --acc2:#38bdf8; --grn:#4ade80; --org:#f97316; --vio:#a78bfa;
+    --line:#23304f; --code:#0a0f22; --red:#fb7185;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--acc2);text-decoration:none}a:hover{text-decoration:underline}
+  .wrap{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+  aside{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;
+    background:linear-gradient(180deg,#0c1330,#0a0f22);border-right:1px solid var(--line);padding:22px 18px}
+  aside h1{font-size:17px;margin:0 0 2px}
+  aside .sub{color:var(--mut);font-size:12px;margin-bottom:18px}
+  nav a{display:block;color:var(--mut);padding:7px 10px;border-radius:8px;font-size:13.5px;margin:2px 0}
+  nav a:hover{background:#16213f;color:var(--ink);text-decoration:none}
+  nav .grp{color:#5f6f97;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 4px 10px}
+  main{padding:40px 48px 80px;max-width:980px}
+  h2{font-size:24px;margin:42px 0 6px;padding-top:12px;border-top:1px solid var(--line)}
+  h2:first-of-type{border-top:none;padding-top:0}
+  h3{font-size:17px;margin:24px 0 6px;color:#cdd8ff}
+  p{color:#d7e0f7}
+  .lead{font-size:16px;color:var(--mut)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  .inline{background:#1a2444;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;color:#cfe0ff}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:16px;overflow:auto;font-size:13px;line-height:1.55}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr}aside{display:none}}
+  .kata{border:1px solid var(--line);border-radius:14px;margin:18px 0;overflow:hidden;background:var(--panel2)}
+  .kata .head{display:flex;align-items:center;gap:12px;padding:14px 18px;background:linear-gradient(90deg,#15203f,#101933);border-bottom:1px solid var(--line)}
+  .kata .num{flex:none;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-weight:700;
+    background:#1e1b4b;color:#c7d2fe;border:1px solid #3730a3}
+  .kata .title{font-weight:700;font-size:16px}
+  .kata .body{padding:16px 18px}
+  .lvl{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--mut);margin-left:auto}
+  .lvl.e{color:#a9f3c4;border-color:#1f5137}
+  .lvl.m{color:#fbbf24;border-color:#5a4410}
+  .lvl.h{color:#fb7185;border-color:#5a1822}
+  .goal{border-left:3px solid var(--acc2);background:#0e1a30;padding:10px 14px;border-radius:0 10px 10px 0;margin:6px 0 12px}
+  details{background:#0c1430;border:1px solid var(--line);border-radius:10px;padding:2px 16px;margin:10px 0}
+  details summary{cursor:pointer;padding:10px 0;font-weight:600;color:#cdd8ff}
+  details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
+  .tests li{margin:4px 0;color:#c8d4f5}
+  .tests code{color:#a9f3c4}
+  .pass{color:var(--grn);font-weight:700}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  /* flashcards */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.cards{grid-template-columns:1fr}}
+  .fc{perspective:1200px;height:180px}
+  .fc .in{position:relative;width:100%;height:100%;transition:transform .5s;transform-style:preserve-3d;cursor:pointer}
+  .fc.flip .in{transform:rotateY(180deg)}
+  .fc .face{position:absolute;inset:0;backface-visibility:hidden;border:1px solid var(--line);border-radius:14px;
+    padding:18px;display:flex;align-items:center;justify-content:center;text-align:center}
+  .fc .front{background:linear-gradient(160deg,#15203f,#101933);font-weight:600;font-size:15px}
+  .fc .back{background:linear-gradient(160deg,#0a1a10,#0b1020);transform:rotateY(180deg);color:#d7e0f7;font-size:14px}
+  .fc .tag{position:absolute;top:10px;left:12px;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}
+  .hint{font-size:12px;color:#5f6f97;text-align:center;margin-top:6px}
+  header.hero{background:radial-gradient(1200px 400px at 20% -10%,#1e1b4b,transparent),linear-gradient(180deg,#0e1430,#0b1020);
+    border:1px solid var(--line);border-radius:16px;padding:28px 30px;margin-bottom:8px}
+  header.hero h2{border:none;margin:0;font-size:30px}
+  .stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#0e1630;color:var(--mut)}
+  .callout{border-left:3px solid var(--grn);background:#0a1a10;padding:12px 16px;border-radius:0 10px 10px 0;margin:14px 0}
+  .callout.warn{border-color:var(--org);background:#1c1408}
+  footer{color:#5f6f97;font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+  @media print{aside{display:none}.wrap{grid-template-columns:1fr}main{max-width:none;padding:0}
+    .kata,details,pre,.card{break-inside:avoid}.fc{height:auto}.fc .in{transform:none!important}
+    .fc .face{position:static;backface-visibility:visible}.fc .back{transform:none;display:block;margin-top:8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <h1>Cami Fleet</h1>
+    <div class="sub">Edge LLM · Kata &amp; Practice Guide</div>
+    <nav>
+      <div class="grp">Warm-up</div>
+      <a href="#how">How to use this</a>
+      <div class="grp">Katas</div>
+      <a href="#k1">1 · Label parser</a>
+      <a href="#k2">2 · Backend resolver</a>
+      <a href="#k3">3 · SHA-256 verify</a>
+      <a href="#k4">4 · State transition</a>
+      <div class="grp">Drills</div>
+      <a href="#design">Design drill</a>
+      <a href="#flash">Flashcards</a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="hero">
+      <h2>Cami Fleet — Kata &amp; Practice Guide</h2>
+      <p class="lead" style="margin:10px 0 0">Hands-on coding katas modeled on the real <strong>Rust edge-agent</strong> logic, plus a system-design drill and flashcards. Each kata is a small, self-contained problem with a spec, hidden hints, a reference solution, and the test cases it must satisfy.</p>
+      <div class="stack">
+        <span class="chip">Rust · agent</span><span class="chip">Go · control plane</span>
+        <span class="chip">TDD</span><span class="chip">System design</span>
+      </div>
+    </header>
+
+    <h2 id="how">How to use this guide</h2>
+    <div class="card">
+      <ol style="margin:0;padding-left:20px">
+        <li>Read the kata <strong>goal</strong> and the <strong>test cases</strong> — treat the tests as the spec.</li>
+        <li>Write your solution from scratch (paper, editor, or in the repo's <code>agent/</code> crate).</li>
+        <li>Only then open <strong>Reference solution</strong> and compare trade-offs.</li>
+        <li>Run it for real: <code>cd agent &amp;&amp; cargo test</code>.</li>
+      </ol>
+    </div>
+    <div class="callout warn">These katas mirror logic that exists in the repo (<code>agent/src/config.rs</code>, <code>agent/src/model_runtime.rs</code>, <code>control-plane/internal/model</code>). The reference solutions are faithful to the codebase, but treat them as study material — always run <code>cargo test</code> to confirm behavior in your checkout.</div>
+
+    <!-- KATA 1 -->
+    <div class="kata" id="k1">
+      <div class="head"><div class="num">1</div><div class="title">Label parser</div><span class="lvl e">easy</span></div>
+      <div class="body">
+        <div class="goal">Parse <span class="inline">DEVICE_LABELS</span> — a comma-separated string of <code>key=value</code> pairs — into a <code>HashMap&lt;String,String&gt;</code>. Skip empty segments; trim whitespace around keys and values.</div>
+        <p><strong>Examples</strong></p>
+        <table>
+          <tr><th>Input</th><th>Output</th></tr>
+          <tr><td class="inline">"location=barcelona,type=jetson-orin"</td><td>{location: barcelona, type: jetson-orin}</td></tr>
+          <tr><td class="inline">""</td><td>{} (empty)</td></tr>
+          <tr><td class="inline">" key1 = val1 , key2=val2 , "</td><td>{key1: val1, key2: val2}</td></tr>
+        </table>
+        <details><summary>💡 Hints</summary>
+          <ul>
+            <li>Split on <code>','</code>, then <code>trim()</code> each segment and <code>continue</code> if empty.</li>
+            <li><code>split_once('=')</code> cleanly separates the first <code>=</code> from the rest.</li>
+            <li>Trim <em>both</em> the key and the value, not just the segment.</li>
+          </ul>
+        </details>
+        <details><summary>✅ Reference solution (Rust)</summary>
+<pre>pub fn labels(raw: &amp;str) -&gt; HashMap&lt;String, String&gt; {
+    let mut map = HashMap::new();
+    for pair in raw.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() { continue; }
+        if let Some((k, v)) = pair.split_once('=') {
+            map.insert(k.trim().to_string(), v.trim().to_string());
+        }
+    }
+    map
+}</pre>
+        </details>
+        <details><summary>🧪 Tests it must pass</summary>
+          <ul class="tests">
+            <li><code>test_labels_parsing</code> — two pairs, correct values, <code>len == 2</code></li>
+            <li><code>test_labels_empty</code> — empty input ⇒ empty map</li>
+            <li><code>test_labels_whitespace</code> — <code>" key1 = val1 , key2=val2 , "</code> trims to clean pairs, <code>len == 2</code></li>
+          </ul>
+        </details>
+      </div>
+    </div>
+
+    <!-- KATA 2 -->
+    <div class="kata" id="k2">
+      <div class="head"><div class="num">2</div><div class="title">Inference backend resolver</div><span class="lvl m">medium</span></div>
+      <div class="body">
+        <div class="goal">Given an explicit <span class="inline">RUNTIME_BACKEND</span> and the <code>LITERT_URL</code>/<code>OLLAMA_URL</code> env vars, resolve which <code>RuntimeBackend</code> to use. Explicit choice wins; otherwise auto-detect with precedence <strong>LiteRT &gt; Ollama &gt; Stub</strong>.</div>
+        <p><strong>Rules</strong></p>
+        <table>
+          <tr><th>RUNTIME_BACKEND</th><th>Result</th></tr>
+          <tr><td class="inline">"litert"</td><td>LiteRT (url defaults to <code>http://localhost:8000</code>)</td></tr>
+          <tr><td class="inline">"ollama"</td><td>Ollama (url defaults to <code>http://localhost:11434</code>)</td></tr>
+          <tr><td class="inline">"stub"</td><td>Stub — even if URLs are set</td></tr>
+          <tr><td>empty</td><td>auto-detect: LiteRT if its URL set, else Ollama if its URL set, else Stub</td></tr>
+        </table>
+        <p>The model name falls back to the deployment's <code>model_id</code> unless <code>LITERT_MODEL</code> overrides it.</p>
+        <details><summary>💡 Hints</summary>
+          <ul>
+            <li><code>trim().to_lowercase()</code> the backend string before matching.</li>
+            <li>Auto-detect and the <code>"litert"</code> arm share the "url-or-default + model-or-fallback" shape — factor a <code>non_empty(&amp;str) -&gt; Option&lt;String&gt;</code> helper.</li>
+            <li>Precedence is just the order of your <code>if/else if</code> checks.</li>
+          </ul>
+        </details>
+        <details><summary>✅ Reference solution (Rust)</summary>
+<pre>pub fn resolve_backend(&amp;self, model_id: &amp;str) -&gt; RuntimeBackend {
+    match self.runtime_backend.trim().to_lowercase().as_str() {
+        "litert" =&gt; RuntimeBackend::LiteRT {
+            url: non_empty(&amp;self.litert_url)
+                 .unwrap_or("http://localhost:8000".into()),
+            model: non_empty(&amp;self.litert_model)
+                 .unwrap_or_else(|| model_id.to_string()),
+        },
+        "ollama" =&gt; RuntimeBackend::Ollama {
+            url: non_empty(&amp;self.ollama_url)
+                 .unwrap_or("http://localhost:11434".into()),
+            model: model_id.to_string(),
+        },
+        "stub" =&gt; RuntimeBackend::Stub,
+        _ =&gt; {                              // auto-detect
+            if let Some(url) = non_empty(&amp;self.litert_url) {
+                RuntimeBackend::LiteRT {
+                    url,
+                    model: non_empty(&amp;self.litert_model)
+                           .unwrap_or_else(|| model_id.to_string()),
+                }
+            } else if let Some(url) = non_empty(&amp;self.ollama_url) {
+                RuntimeBackend::Ollama { url, model: model_id.to_string() }
+            } else {
+                RuntimeBackend::Stub
+            }
+        }
+    }
+}</pre>
+        </details>
+        <details><summary>🧪 Tests it must pass</summary>
+          <ul class="tests">
+            <li><code>test_auto_detect_stub_when_empty</code> — nothing set ⇒ <code>stub</code></li>
+            <li><code>test_auto_detect_ollama</code> — only <code>OLLAMA_URL</code> ⇒ ollama, model = model_id</li>
+            <li><code>test_auto_detect_litert</code> — only <code>LITERT_URL</code> ⇒ litert</li>
+            <li><code>test_litert_preferred_over_ollama</code> — both URLs set ⇒ litert</li>
+            <li><code>test_explicit_backend_overrides</code> — both URLs set, backend=ollama ⇒ ollama</li>
+            <li><code>test_explicit_stub</code> — ollama URL set, backend=stub ⇒ stub</li>
+            <li><code>test_litert_model_override</code> — <code>LITERT_MODEL</code> beats model_id</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+
+    <!-- KATA 3 -->
+    <div class="kata" id="k3">
+      <div class="head"><div class="num">3</div><div class="title">SHA-256 artifact verification</div><span class="lvl m">medium</span></div>
+      <div class="body">
+        <div class="goal">Given downloaded bytes and an expected hex SHA-256, return <code>Ok(())</code> on match and a descriptive error on mismatch. This is the gate that stops tampered weights from loading.</div>
+        <details><summary>💡 Hints</summary>
+          <ul>
+            <li>Use the <code>sha2</code> crate: <code>Sha256::new()</code>, <code>update(bytes)</code>, <code>finalize()</code>.</li>
+            <li><code>hex::encode(...)</code> the digest, then compare strings.</li>
+            <li>On mismatch, include both expected and actual in the error — invaluable in logs.</li>
+          </ul>
+        </details>
+        <details><summary>✅ Reference solution (Rust)</summary>
+<pre>pub fn verify_artifact(model_id: &amp;str, bytes: &amp;[u8],
+                       expected_sha256: &amp;str) -&gt; Result&lt;()&gt; {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let actual = hex::encode(hasher.finalize());
+
+    if actual != expected_sha256 {
+        bail!("artifact SHA-256 mismatch: expected {expected_sha256}, got {actual}");
+    }
+    Ok(())
+}</pre>
+        </details>
+        <details><summary>🧪 Tests to write</summary>
+          <ul class="tests">
+            <li><code>verify_ok</code> — bytes whose real digest equals <code>expected</code> ⇒ <code>Ok</code></li>
+            <li><code>verify_mismatch</code> — wrong expected hash ⇒ <code>Err</code>, message contains both hashes</li>
+            <li><code>verify_empty</code> — empty slice hashes to the known SHA-256 of "" (<code>e3b0c442...</code>)</li>
+          </ul>
+        </details>
+        <div class="callout">Why it matters: content addressing means the hash <em>is</em> the identity of the artifact. Verify-before-load is the whole integrity story — there is no second chance once weights are in memory.</div>
+      </div>
+    </div>
+
+    <!-- KATA 4 -->
+    <div class="kata" id="k4">
+      <div class="head"><div class="num">4</div><div class="title">Device-deployment state transition</div><span class="lvl h">harder</span></div>
+      <div class="body">
+        <div class="goal">Model the per-device lifecycle <code>pending → downloading → verifying → running</code>, where <em>any</em> state can jump to <code>failed</code>. Implement <code>next(state, event)</code> and reject illegal transitions.</div>
+        <table>
+          <tr><th>From</th><th>Event</th><th>To</th></tr>
+          <tr><td>Pending</td><td>StartDownload</td><td>Downloading</td></tr>
+          <tr><td>Downloading</td><td>DownloadDone</td><td>Verifying</td></tr>
+          <tr><td>Verifying</td><td>VerifyOk</td><td>Running</td></tr>
+          <tr><td>any</td><td>Error(msg)</td><td>Failed(msg)</td></tr>
+          <tr><td>Running / Failed</td><td>anything else</td><td>(illegal — terminal)</td></tr>
+        </table>
+        <details><summary>💡 Hints</summary>
+          <ul>
+            <li>Model states and events as enums; <code>match (state, event)</code> on the pair.</li>
+            <li><code>Error</code> is a wildcard arm that applies in any non-terminal state.</li>
+            <li>Return <code>Result&lt;State, IllegalTransition&gt;</code> so callers can't silently skip a step.</li>
+          </ul>
+        </details>
+        <details><summary>✅ Reference solution (Rust)</summary>
+<pre>#[derive(Debug, Clone, PartialEq)]
+enum State { Pending, Downloading, Verifying, Running, Failed(String) }
+
+enum Event { StartDownload, DownloadDone, VerifyOk, Error(String) }
+
+fn next(state: State, ev: Event) -&gt; Result&lt;State, String&gt; {
+    use State::*; use Event::*;
+    match (state, ev) {
+        (_, Error(m))                  =&gt; Ok(Failed(m)),
+        (Pending,     StartDownload)   =&gt; Ok(Downloading),
+        (Downloading, DownloadDone)    =&gt; Ok(Verifying),
+        (Verifying,   VerifyOk)        =&gt; Ok(Running),
+        (s, _) =&gt; Err(format!("illegal transition from {s:?}")),
+    }
+}</pre>
+        </details>
+        <details><summary>🧪 Tests to write</summary>
+          <ul class="tests">
+            <li><code>happy_path</code> — Pending→Downloading→Verifying→Running</li>
+            <li><code>error_from_any</code> — Error from Downloading ⇒ Failed("...")</li>
+            <li><code>illegal_skip</code> — VerifyOk while Pending ⇒ <code>Err</code></li>
+            <li><code>terminal_running</code> — any event on Running (except… none) ⇒ <code>Err</code></li>
+          </ul>
+        </details>
+        <div class="callout warn">Note the ordering: the <code>Error</code> arm comes <em>first</em> so it wins from any state. Put it last and the wildcard <code>(s, _)</code> would swallow it.</div>
+      </div>
+    </div>
+
+    <!-- DESIGN DRILL -->
+    <h2 id="design">Design drill — "Add a rollback"</h2>
+    <div class="card">
+      <p><strong>Prompt:</strong> A deployment to <code>location=barcelona</code> ships a bad model — devices reach <span class="inline">running</span> but telemetry shows TTFT spiking and errors climbing. Design a <strong>one-click rollback</strong> to the previous model for the affected devices. You have 15 minutes — sketch the API, data, and agent changes.</p>
+      <details><summary>🧭 Discussion framework</summary>
+        <ul>
+          <li><strong>What "previous" means:</strong> you need history. Each device has a <code>current_model_id</code>; persist the prior deployment per device (or keep an ordered deployment log) so rollback has a target.</li>
+          <li><strong>API surface:</strong> <code>POST /api/deployments/{id}/rollback</code> creates a <em>new</em> deployment pointing at the previous artifact_url + SHA for the same tag selector. Rollback is just a forward deploy of an older artifact — reuse the whole pipeline.</li>
+          <li><strong>Integrity still applies:</strong> the old artifact's SHA-256 must still verify; never special-case the security gate for rollbacks.</li>
+          <li><strong>Signal to trigger it:</strong> who decides? Manual (operator sees the dashboard) vs. automatic (a watchdog on ClickHouse telemetry: TTFT/error-rate threshold). Start manual; automation is a follow-up.</li>
+          <li><strong>State &amp; events:</strong> reuse the existing per-device state machine; emit a <code>rollback</code> event on NATS so the UI and any subscribers update.</li>
+          <li><strong>Failure modes:</strong> what if the old artifact is gone? What if only some devices rolled back? Partial-rollback status needs to be visible — lean on the existing per-device deployment status rollup.</li>
+        </ul>
+        <p style="margin-bottom:0"><strong>Strong answer signal:</strong> recognizing rollback is <em>not</em> a new mechanism — it's the existing tag-based deploy aimed at a remembered artifact, with the same SHA gate and the same state machine. The only genuinely new thing is <em>remembering the previous artifact</em>.</p>
+      </details>
+    </div>
+
+    <!-- FLASHCARDS -->
+    <h2 id="flash">Flashcards</h2>
+    <p class="lead">Click a card to flip. (When printed, both sides show.)</p>
+    <div class="cards">
+      <div class="fc" onclick="this.classList.toggle('flip')">
+        <div class="in">
+          <div class="face front"><span class="tag">Q · precedence</span>When RUNTIME_BACKEND is empty, what order does the agent auto-detect backends?</div>
+          <div class="face back"><span class="tag">A</span>LiteRT &gt; Ollama &gt; Stub — based on which <code>*_URL</code> env var is set. Stub is the always-available fallback.</div>
+        </div>
+      </div>
+      <div class="fc" onclick="this.classList.toggle('flip')">
+        <div class="in">
+          <div class="face front"><span class="tag">Q · integrity</span>What does the agent do after downloading an artifact, before loading it?</div>
+          <div class="face back"><span class="tag">A</span>Computes SHA-256 over the bytes and compares to the deployment's <code>artifact_sha256</code>. On mismatch it bails and never loads — tampered weights are rejected.</div>
+        </div>
+      </div>
+      <div class="fc" onclick="this.classList.toggle('flip')">
+        <div class="in">
+          <div class="face front"><span class="tag">Q · lifecycle</span>Name the four per-device deployment states in order (plus the escape hatch).</div>
+          <div class="face back"><span class="tag">A</span>pending → downloading → verifying → running, with any state able to fall to <strong>failed</strong> (carrying an error_msg).</div>
+        </div>
+      </div>
+      <div class="fc" onclick="this.classList.toggle('flip')">
+        <div class="in">
+          <div class="face front"><span class="tag">Q · transport</span>How do devices authenticate to the control plane, and over what?</div>
+          <div class="face back"><span class="tag">A</span>gRPC on :9090 over <strong>mTLS (TLS 1.3, mutual certs)</strong>. The agent loads ca.crt / device.crt / device.key from <code>CERT_DIR</code>.</div>
+        </div>
+      </div>
+      <div class="fc" onclick="this.classList.toggle('flip')">
+        <div class="in">
+          <div class="face front"><span class="tag">Q · liveness</span>How and when is a device marked offline?</div>
+          <div class="face back"><span class="tag">A</span>A heartbeat watchdog flips it to <strong>offline after 30 s</strong> of silence. Device status (online/offline) is separate from deployment progress.</div>
+        </div>
+      </div>
+      <div class="fc" onclick="this.classList.toggle('flip')">
+        <div class="in">
+          <div class="face front"><span class="tag">Q · storage</span>Why ClickHouse and Postgres in the same system?</div>
+          <div class="face back"><span class="tag">A</span>Postgres = low-volume mutable state (devices, deployments). ClickHouse = high-volume append-only telemetry (tps, ttft, mem). NATS carries events between services.</div>
+        </div>
+      </div>
+    </div>
+    <p class="hint">Tip: cover the back, answer aloud, then flip. Re-test the ones you miss.</p>
+
+    <footer>
+      Cami Fleet — kata &amp; practice guide. Self-contained HTML. Katas mirror <code>agent/src/config.rs</code>,
+      <code>agent/src/model_runtime.rs</code>, and <code>control-plane/internal/model</code>. Run <code>cd agent &amp;&amp; cargo test</code> to validate against your checkout.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

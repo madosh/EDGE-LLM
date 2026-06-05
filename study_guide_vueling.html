@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cami Fleet — Knowledge Study Guide</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121a33; --panel2:#0f1730; --ink:#e6ecff; --mut:#9fb0d6;
+    --acc:#6366f1; --acc2:#38bdf8; --grn:#4ade80; --org:#f97316; --vio:#a78bfa;
+    --line:#23304f; --code:#0a0f22;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--acc2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+  /* Sidebar */
+  aside{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;
+    background:linear-gradient(180deg,#0c1330,#0a0f22);border-right:1px solid var(--line);padding:22px 18px}
+  aside h1{font-size:17px;margin:0 0 2px}
+  aside .sub{color:var(--mut);font-size:12px;margin-bottom:18px}
+  nav a{display:block;color:var(--mut);padding:7px 10px;border-radius:8px;font-size:13.5px;margin:2px 0}
+  nav a:hover{background:#16213f;color:var(--ink);text-decoration:none}
+  nav .grp{color:#5f6f97;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 4px 10px}
+  /* Main */
+  main{padding:40px 48px 80px;max-width:980px}
+  .stack{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 8px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);
+    background:#0e1630;color:var(--mut)}
+  .chip.go{border-color:#00ADD8;color:#7fe3ff}
+  .chip.rust{border-color:#f97316;color:#ffc89a}
+  .chip.svelte{border-color:#FF3E00;color:#ff9b73}
+  .chip.db{border-color:#4ade80;color:#a9f3c4}
+  h2{font-size:24px;margin:42px 0 6px;padding-top:12px;border-top:1px solid var(--line)}
+  h2:first-of-type{border-top:none;padding-top:0}
+  h3{font-size:17px;margin:26px 0 6px;color:#cdd8ff}
+  p{color:#d7e0f7}
+  .lead{font-size:16px;color:var(--mut)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}.wrap{grid-template-columns:1fr}aside{display:none}}
+  code,kbd{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  .inline{background:#1a2444;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;color:#cfe0ff}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:16px;overflow:auto;
+    font-size:13px;line-height:1.5}
+  pre .k{color:#c792ea}.pre .s{color:#a9f3c4}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  td .inline{font-size:12.5px}
+  .pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;font-weight:600}
+  .p-pending{background:#33240a;color:#fbbf24}
+  .p-dl{background:#0a2336;color:#5ec6ff}
+  .p-vr{background:#241a3a;color:#c4a6ff}
+  .p-run{background:#0b2c18;color:#67e8a0}
+  .p-fail{background:#350f12;color:#fb7185}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+  .flow .step{background:#0e1630;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px}
+  .flow .arr{color:var(--mut)}
+  .callout{border-left:3px solid var(--acc2);background:#0e1a30;padding:12px 16px;border-radius:0 10px 10px 0;margin:14px 0}
+  .callout.warn{border-color:var(--org);background:#1c1408}
+  .callout.key{border-color:var(--grn);background:#0a1a10}
+  details{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:4px 16px;margin:8px 0}
+  details summary{cursor:pointer;padding:10px 0;font-weight:600;color:#cdd8ff}
+  details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
+  .q{color:var(--acc2);font-weight:600}
+  .tag{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-left:6px}
+  header.hero{background:radial-gradient(1200px 400px at 20% -10%,#1e1b4b,transparent),
+    linear-gradient(180deg,#0e1430,#0b1020);border:1px solid var(--line);border-radius:16px;padding:28px 30px;margin-bottom:8px}
+  header.hero h2{border:none;margin:0;font-size:30px}
+  .meta{color:var(--mut);font-size:13px;margin-top:8px}
+  footer{color:#5f6f97;font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+  @media print{aside{display:none}.wrap{grid-template-columns:1fr}main{max-width:none;padding:0}
+    header.hero{break-inside:avoid}.card,details,pre{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <h1>Cami Fleet</h1>
+    <div class="sub">Edge LLM · Knowledge Study Guide</div>
+    <nav>
+      <div class="grp">Spotlight</div>
+      <a href="#spotlight">Edge LLM · Cami Fleet</a>
+      <a href="#elevator">30-second pitch</a>
+      <div class="grp">Foundations</div>
+      <a href="#stack">The stack</a>
+      <a href="#arch">Architecture</a>
+      <a href="#dataflow">End-to-end flow</a>
+      <div class="grp">Core concepts</div>
+      <a href="#deploy">Tag-based deploy</a>
+      <a href="#states">State machines</a>
+      <a href="#security">Security &amp; integrity</a>
+      <a href="#backends">Inference backends</a>
+      <a href="#telemetry">Telemetry &amp; offline</a>
+      <div class="grp">Interview</div>
+      <a href="#qa">Q&amp;A drills</a>
+      <a href="#cheat">Cheat sheet</a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="hero">
+      <h2>Cami Fleet — Knowledge Study Guide</h2>
+      <p class="lead" style="margin:10px 0 0">A control plane and device-agent system for managing <strong>edge AI deployments at scale</strong>: deploy models to devices by tag, watch each device download, verify SHA-256, load the model, and stream live inference telemetry — all from an operator dashboard.</p>
+      <div class="stack">
+        <span class="chip go">Go 1.23 · control plane</span>
+        <span class="chip rust">Rust · device agent</span>
+        <span class="chip svelte">SvelteKit 2 · operator UI</span>
+        <span class="chip db">Postgres · ClickHouse · NATS</span>
+        <span class="chip">gRPC + mTLS</span>
+      </div>
+      <div class="meta">Onboarding / interview prep · grounded in the live repo</div>
+    </header>
+
+    <!-- ─────────── SPOTLIGHT ─────────── -->
+    <h2 id="spotlight">Spotlight — Edge LLM · Cami Fleet</h2>
+    <p>Cami Fleet answers one question: <em>how do you safely push an AI model to a fleet of edge devices you don't physically control, and prove it actually ran?</em> The system is split into three cooperating programs, each in the language that fits its job.</p>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">Control plane <span class="tag">Go 1.23</span></h3>
+        <p style="margin:0">The brain. Exposes a <strong>REST API</strong> (<span class="inline">:8080</span>) for operators and a <strong>gRPC server</strong> (<span class="inline">:9090</span>, mTLS) for devices. Tracks device state and deployments in Postgres, telemetry in ClickHouse, and fans out events over NATS.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Device agent <span class="tag">Rust</span></h3>
+        <p style="margin:0">Runs on each edge device. Registers, heartbeats, watches for deploy instructions, then <strong>downloads → verifies → loads → reports</strong>. Talks to a pluggable inference runtime (LiteRT, Ollama, or a stub).</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Operator UI <span class="tag">SvelteKit</span></h3>
+        <p style="margin:0">The dashboard. Fleet overview, a deploy form (model + SHA + tag selector), and per-device detail with live telemetry charts.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Why it matters</h3>
+        <p style="margin:0">Edge AI means weak trust and weak networks. Cami Fleet leans on <strong>content-addressed artifacts</strong> and <strong>mutual TLS</strong> so a device can refuse tampered weights and the control plane only talks to devices it issued certs to.</p>
+      </div>
+    </div>
+
+    <h3 id="elevator">The 30-second pitch</h3>
+    <div class="callout key">
+      "Cami Fleet is a fleet manager for edge AI. An operator picks a model and a tag selector like <span class="inline">location=barcelona</span>; the control plane records a deployment and the matching Rust agents pull the artifact, verify its SHA-256, load it into their runtime, and stream tokens/sec and latency back. Devices authenticate with mutual TLS over gRPC, and a 30-second heartbeat watchdog flips silent devices to <em>offline</em>. Three stores: Postgres for state, ClickHouse for time-series telemetry, NATS for events."
+    </div>
+
+    <!-- ─────────── STACK ─────────── -->
+    <h2 id="stack">The stack, in one line</h2>
+    <pre><span style="color:#7fe3ff">Go 1.23</span> control plane (REST :8080 + gRPC :9090 mTLS) · <span style="color:#ffc89a">Rust</span> edge agent · <span style="color:#ff9b73">SvelteKit 2</span> + Tailwind UI · <span style="color:#a9f3c4">Postgres 16</span> (state) · <span style="color:#a9f3c4">ClickHouse 23.8</span> (telemetry) · <span style="color:#a9f3c4">NATS 2.10</span> (events) · Docker Compose · CI: Go/Rust/Web/Docker</pre>
+    <table>
+      <tr><th>Layer</th><th>Tech</th><th>Responsibility</th></tr>
+      <tr><td>Operator UI</td><td class="inline">SvelteKit 2 + Tailwind</td><td>Fleet overview, deploy form, device detail</td></tr>
+      <tr><td>Control plane</td><td class="inline">Go 1.23</td><td>REST + gRPC, orchestration, selectors</td></tr>
+      <tr><td>Device agent</td><td class="inline">Rust (tokio)</td><td>Register, heartbeat, deploy lifecycle, inference</td></tr>
+      <tr><td>State store</td><td class="inline">Postgres 16</td><td>Devices &amp; deployments</td></tr>
+      <tr><td>Telemetry store</td><td class="inline">ClickHouse 23.8</td><td>Per-device tokens/sec, TTFT, memory</td></tr>
+      <tr><td>Event bus</td><td class="inline">NATS 2.10 JetStream</td><td>Cross-service device events</td></tr>
+    </table>
+
+    <!-- ─────────── ARCH ─────────── -->
+    <h2 id="arch">Architecture at a glance</h2>
+    <p>Three planes: <strong>operator → control plane → edge</strong>. The operator browser only ever speaks REST. Devices only ever speak gRPC (mTLS). The control plane is the only thing that touches the data stores.</p>
+    <pre>Operator Browser
+   │  REST /api  (X-Api-Key)
+   ▼
+Control Plane (Go)          ┌── Postgres 16   device state + deployments
+   ├ REST   :8080  ─────────┼── ClickHouse    inference telemetry
+   └ gRPC   :9090  (mTLS)   └── NATS          event bus
+   ▲
+   │  gRPC + mTLS (TLS 1.3, mutual certs)
+   ▼
+Edge Devices (Rust agents)  ┄┄►  LiteRT / Ollama / Stub  (inference)</pre>
+    <div class="callout"><span class="q">Why two protocols?</span> REST is friendly for humans and the browser; gRPC gives the agent a typed, streaming, mutually-authenticated channel that's cheap to keep open for heartbeats and telemetry.</div>
+
+    <!-- ─────────── DATA FLOW ─────────── -->
+    <h2 id="dataflow">End-to-end: from "deploy" to "running"</h2>
+    <div class="flow">
+      <span class="step">1 · Operator POSTs deployment</span><span class="arr">→</span>
+      <span class="step">2 · Control plane matches tag selector</span><span class="arr">→</span>
+      <span class="step">3 · Agents see instruction on heartbeat</span><span class="arr">→</span>
+      <span class="step">4 · download</span><span class="arr">→</span>
+      <span class="step">5 · verify SHA-256</span><span class="arr">→</span>
+      <span class="step">6 · load into runtime</span><span class="arr">→</span>
+      <span class="step">7 · stream telemetry</span>
+    </div>
+    <pre>SHA=$(cat artifacts/sample-gemma-4-e2b.tar.gz.sha256)
+
+curl -s -X POST http://localhost:8080/api/deployments \
+  -H "X-Api-Key: changeme" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "gemma-4-e2b",
+    "artifact_url": "http://control-plane:8080/artifacts/sample-gemma-4-e2b.tar.gz",
+    "artifact_sha256": "'"$SHA"'",
+    "tag_selector": {"location": "barcelona"}
+  }'</pre>
+    <p>Each matching device then cycles <span class="pill p-pending">pending</span> <span class="pill p-dl">downloading</span> <span class="pill p-vr">verifying</span> <span class="pill p-run">running</span> within seconds.</p>
+
+    <!-- ─────────── DEPLOY ─────────── -->
+    <h2 id="deploy">Concept · Tag-based deployment</h2>
+    <p>You never deploy to a device by ID. You deploy to a <strong>label selector</strong>, and the control plane resolves which devices match. Labels are arbitrary <span class="inline">key=value</span> pairs set on each agent (e.g. <span class="inline">location=barcelona,type=jetson-orin</span>).</p>
+    <div class="grid2">
+      <div class="card"><h3 style="margin-top:0">Agent side</h3><p style="margin:0">Labels come from <span class="inline">DEVICE_LABELS</span> and are parsed into a map. Empty pairs are skipped; whitespace is trimmed.</p></div>
+      <div class="card"><h3 style="margin-top:0">Control-plane side</h3><p style="margin:0">A deployment carries a <span class="inline">tag_selector</span> map. A device matches when it satisfies every key in the selector.</p></div>
+    </div>
+    <div class="callout key"><span class="q">Mental model:</span> it's Kubernetes label selectors for a fleet of AI devices. Decoupling intent ("barcelona devices") from identity ("device-7c3f") is what makes it scale to N devices.</div>
+
+    <!-- ─────────── STATE MACHINES ─────────── -->
+    <h2 id="states">Concept · The two state machines</h2>
+    <h3>Deployment status (control plane's view)</h3>
+    <div class="flow">
+      <span class="pill p-pending">pending</span><span class="arr">→</span>
+      <span class="pill p-dl">in_progress</span><span class="arr">→</span>
+      <span class="pill p-run">completed</span>
+      <span class="arr">/</span><span class="pill p-fail">failed</span>
+    </div>
+    <h3>Per-device deployment status (agent's view)</h3>
+    <div class="flow">
+      <span class="pill p-pending">pending</span><span class="arr">→</span>
+      <span class="pill p-dl">downloading</span><span class="arr">→</span>
+      <span class="pill p-vr">verifying</span><span class="arr">→</span>
+      <span class="pill p-run">running</span>
+      <span class="arr">/ any →</span><span class="pill p-fail">failed</span>
+    </div>
+    <table>
+      <tr><th>State</th><th>What just happened</th></tr>
+      <tr><td><span class="pill p-pending">pending</span></td><td>Device matched the selector; instruction queued, not yet started.</td></tr>
+      <tr><td><span class="pill p-dl">downloading</span></td><td>Agent is pulling the artifact from <span class="inline">artifact_url</span>.</td></tr>
+      <tr><td><span class="pill p-vr">verifying</span></td><td>Computing SHA-256 of the bytes and comparing to <span class="inline">artifact_sha256</span>.</td></tr>
+      <tr><td><span class="pill p-run">running</span></td><td>Model loaded into the runtime; telemetry streaming.</td></tr>
+      <tr><td><span class="pill p-fail">failed</span></td><td>Download error, SHA mismatch, or load failure — carries an <span class="inline">error_msg</span>.</td></tr>
+    </table>
+    <div class="callout warn"><span class="q">Easy to confuse:</span> there are <em>two</em> status enums. <strong>Deployment</strong> status (pending/in_progress/completed/failed) is the rollup the operator sees; <strong>device-deployment</strong> status (pending/downloading/verifying/running/failed) is per device. A deployment is <span class="inline">completed</span> only when its devices finish.</div>
+
+    <!-- ─────────── SECURITY ─────────── -->
+    <h2 id="security">Concept · Security &amp; integrity</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">Content-addressed artifacts</h3>
+        <p>Every deployment includes the expected <span class="inline">artifact_sha256</span>. The agent hashes the downloaded bytes and <strong>refuses to load</strong> on mismatch — tampered or corrupted weights never reach the runtime.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Mutual TLS (mTLS)</h3>
+        <p>Device ↔ control-plane gRPC runs over <strong>TLS 1.3 with mutual certificates</strong>. The agent loads <span class="inline">ca.crt</span>, <span class="inline">device.crt</span>, <span class="inline">device.key</span> from <span class="inline">CERT_DIR</span>. Both sides prove identity.</p>
+      </div>
+    </div>
+    <div class="callout key"><span class="q">One-liner:</span> mTLS answers "is this device allowed to talk to me?"; SHA-256 answers "are these the exact bytes I published?" Two different trust questions, two mechanisms.</div>
+
+    <!-- ─────────── BACKENDS ─────────── -->
+    <h2 id="backends">Concept · Pluggable inference backends</h2>
+    <p>The agent abstracts the runtime behind a <span class="inline">RuntimeBackend</span> enum with three variants. Selection is explicit via <span class="inline">RUNTIME_BACKEND</span>, or auto-detected.</p>
+    <table>
+      <tr><th>Backend</th><th>Trigger</th><th>Best for</th></tr>
+      <tr><td class="inline">LiteRT</td><td><span class="inline">LITERT_URL</span> set</td><td>Edge devices with NPU/GPU (Pixel, MediaTek, Qualcomm)</td></tr>
+      <tr><td class="inline">Ollama</td><td><span class="inline">OLLAMA_URL</span> set</td><td>x86/ARM servers, CUDA or CPU</td></tr>
+      <tr><td class="inline">Stub</td><td>default / fallback</td><td>CI, demos, dev without a runtime</td></tr>
+    </table>
+    <div class="callout"><span class="q">Auto-detect precedence:</span> if no explicit backend, the agent prefers <strong>LiteRT &gt; Ollama &gt; Stub</strong> based on which URL env var is set. An explicit <span class="inline">RUNTIME_BACKEND</span> always overrides auto-detection.</div>
+    <div class="callout warn"><span class="q">Gotcha worth knowing:</span> Google LiteRT is genuinely an <em>on-device</em> runtime. In the control-plane agent, the "LiteRT" backend is actually an HTTP client to a Gemini-compatible <span class="inline">:generateContent</span> endpoint. For the real on-device runtime loading a model on a phone, see <span class="inline">examples/litert-android</span>.</div>
+
+    <!-- ─────────── TELEMETRY ─────────── -->
+    <h2 id="telemetry">Concept · Telemetry &amp; offline detection</h2>
+    <p>Once <span class="pill p-run">running</span>, the agent streams metrics that land in ClickHouse:</p>
+    <table>
+      <tr><th>Metric</th><th>Meaning</th></tr>
+      <tr><td class="inline">tps</td><td>Tokens per second — throughput</td></tr>
+      <tr><td class="inline">ttft_ms</td><td>Time to first token — responsiveness</td></tr>
+      <tr><td class="inline">mem_mb</td><td>Resident memory of the loaded model</td></tr>
+    </table>
+    <div class="callout key"><span class="q">Offline detection:</span> a heartbeat watchdog flips a device to <span class="pill p-fail">offline</span> after <strong>30 s</strong> of silence. Device status is a simple <span class="inline">online</span>/<span class="inline">offline</span> enum, separate from deployment progress.</div>
+
+    <!-- ─────────── Q&A ─────────── -->
+    <h2 id="qa">Q&amp;A drills</h2>
+
+    <details><summary>Why three different languages?</summary>
+      <p>Each layer plays to a language's strength: <strong>Go</strong> for a concurrent network service (REST+gRPC, easy goroutines), <strong>Rust</strong> for a small, safe, long-running agent on constrained devices (no GC pauses, memory safety), and <strong>SvelteKit</strong> for a reactive operator UI. The contract between them is the proto/REST schema, so they evolve independently.</p>
+    </details>
+    <details><summary>Walk me through what happens when I deploy a model.</summary>
+      <p>Operator POSTs <span class="inline">/api/deployments</span> with model_id, artifact_url, SHA-256, and a tag_selector. The control plane persists the deployment and computes matching devices from their labels. On their next gRPC heartbeat, matching agents receive the instruction and move pending→downloading→verifying→running: pull the artifact, hash it and compare to the expected SHA, load it into the resolved backend, then stream tps/ttft/mem telemetry. Failures at any step set the device-deployment to <span class="inline">failed</span> with an error message.</p>
+    </details>
+    <details><summary>How does a device refuse a tampered model?</summary>
+      <p>The deployment ships the expected <span class="inline">artifact_sha256</span>. After download, the agent computes SHA-256 over the bytes; if it doesn't match, it bails with a "SHA-256 mismatch" error and never loads the weights. Content addressing means the hash <em>is</em> the integrity guarantee.</p>
+    </details>
+    <details><summary>What's the difference between deployment status and device status?</summary>
+      <p>Three separate enums. <strong>Device status</strong>: online/offline (liveness). <strong>Deployment status</strong>: pending/in_progress/completed/failed (the operator's rollup). <strong>Device-deployment status</strong>: pending/downloading/verifying/running/failed (one device's progress on one deployment). Mixing these up is the classic onboarding trip-up.</p>
+    </details>
+    <details><summary>Which inference backend runs, and who decides?</summary>
+      <p>The agent's config resolves it. If <span class="inline">RUNTIME_BACKEND</span> is set (litert/ollama/stub) that wins. Otherwise it auto-detects with precedence LiteRT &gt; Ollama &gt; Stub by checking which <span class="inline">*_URL</span> is set, defaulting to Stub so CI and demos always work with no runtime.</p>
+    </details>
+    <details><summary>Why ClickHouse <em>and</em> Postgres?</summary>
+      <p>Different shapes of data. Postgres holds low-volume, mutable <strong>state</strong> (devices, deployments) where transactions and joins matter. ClickHouse holds high-volume, append-only <strong>time-series telemetry</strong> where columnar scans and aggregation over millions of points are the workload. NATS carries the ephemeral <strong>events</strong> between services.</p>
+    </details>
+
+    <!-- ─────────── CHEAT ─────────── -->
+    <h2 id="cheat">Cheat sheet</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">Ports &amp; protocols</h3>
+        <table>
+          <tr><td>REST</td><td class="inline">:8080</td></tr>
+          <tr><td>gRPC (mTLS)</td><td class="inline">:9090</td></tr>
+          <tr><td>Web UI</td><td class="inline">:5173</td></tr>
+          <tr><td>Auth header</td><td class="inline">X-Api-Key</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Key env vars</h3>
+        <table>
+          <tr><td class="inline">CAMI_API_KEY</td><td>REST/UI key</td></tr>
+          <tr><td class="inline">DEVICE_LABELS</td><td>selector labels</td></tr>
+          <tr><td class="inline">RUNTIME_BACKEND</td><td>litert/ollama/stub</td></tr>
+          <tr><td class="inline">CONTROL_PLANE_URL</td><td>gRPC endpoint</td></tr>
+          <tr><td class="inline">CERT_DIR</td><td>mTLS certs</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="callout key"><strong>Remember the spine:</strong> deploy by <em>tag</em> → agent <em>downloads/verifies/loads</em> → <em>mTLS</em> in, <em>SHA-256</em> for integrity → <em>telemetry</em> out → <em>30 s</em> heartbeat = offline.</div>
+
+    <footer>
+      Cami Fleet — knowledge study guide. Self-contained HTML, grounded in the repository
+      (README, <code>control-plane/internal/model</code>, <code>agent/src</code>). Open in any browser; print to PDF via your browser's Print dialog.
+    </footer>
+  </main>
+</div>
+</body>
+</html>
