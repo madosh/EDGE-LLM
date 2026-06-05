@@ -4,6 +4,8 @@ A minimal, readable Android app that runs **Google LiteRT** entirely on the devi
 no network, fully private. Built as a companion to the [EDGE-LLM](../../README.md) project to
 demonstrate hands-on understanding of the LiteRT framework.
 
+> 🌐 *Llegeix-ho en [català](README.ca.md).*
+
 It shows **both** halves of the LiteRT stack:
 
 | Tab | What it does | LiteRT component |

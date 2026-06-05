@@ -94,15 +94,23 @@ services:
     networks:
       - fleet
 
-  # ── LiteRT (optional — Google edge-optimized inference) ─────────────────────
-  # Uncomment to use Google LiteRT-LM for on-device AI inference via its
-  # Gemini-compatible REST API.  Requires: pip install litert-lm
-  # For NPU/GPU acceleration see: https://ai.google.dev/edge/litert
+  # ── "LiteRT" REST backend (optional — Gemini-compatible inference server) ────
+  # IMPORTANT: Google LiteRT itself is an *on-device* runtime (Android/embedded),
+  # not a server — see examples/litert-android for the real thing. The agent's
+  # `litert` backend (agent/src/model_runtime.rs) is just an HTTP client that
+  # speaks the Gemini `generateContent` REST API, so it can point at ANY
+  # Gemini-compatible endpoint you front yourself (e.g. a wrapper around
+  # LiteRT-LM, or a hosted Gemini-compatible gateway).
+  #
+  # There is no official `lit serve` command in Google LiteRT — to use this
+  # backend, run your own server that exposes:
+  #   POST /v1beta/models/{model}:generateContent
+  # on port 8000, then set LITERT_URL on a device-agent below.
+  # Docs: https://ai.google.dev/edge/litert
   #
   # litert:
-  #   image: python:3.12-slim
-  #   command: >
-  #     sh -c "pip install litert-lm && lit serve --model gemma3-1b --port 8000 --host 0.0.0.0"
+  #   image: your-gemini-compatible-server:latest
+  #   ports: ["8000:8000"]
   #   volumes:
   #     - litert-cache:/root/.cache
   #   healthcheck:
