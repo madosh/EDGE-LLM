@@ -1,0 +1,13 @@
+# Build output
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+
+# Model weights — large binaries, add locally (see app/src/main/assets/MODELS.md)
+*.tflite
+*.task
+*.litertlm
+*.bin

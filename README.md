@@ -164,6 +164,18 @@ The agent supports three runtime backends, selected via `RUNTIME_BACKEND` or aut
 | **Ollama** | `OLLAMA_URL` | x86/ARM servers with CUDA or CPU inference |
 | **Stub** | *(default)* | CI, demos, development without a runtime |
 
+> The control-plane agent treats LiteRT as a **remote service**. For a runnable, on-device
+> LiteRT example — the actual runtime loading a model on a phone — see
+> [`examples/litert-android`](examples/litert-android/README.md).
+
+---
+
+## Examples
+
+| Example | Stack | What it shows |
+|---------|-------|---------------|
+| [`examples/litert-android`](examples/litert-android/README.md) | Android · Kotlin · Compose | **Google LiteRT on-device**: MobileNet image classification (`Interpreter` API + GPU delegate) and Gemma text generation (LiteRT-LM). 100% offline, no `INTERNET` permission. |
+
 ---
 
 ## Project Structure
