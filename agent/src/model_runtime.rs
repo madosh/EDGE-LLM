@@ -1,7 +1,10 @@
 /// Multi-backend model runtime for edge AI inference.
 ///
 /// Supports three backends, selected via `RUNTIME_BACKEND` env var:
-///   - **litert**  — Google LiteRT-LM via its Gemini-compatible REST API (`lit serve`)
+///   - **litert**  — a Gemini-compatible REST endpoint (`:generateContent`). Note: Google
+///                   LiteRT is an *on-device* runtime, not a server (see
+///                   `examples/litert-android` for the real on-device runtime). This backend
+///                   is an HTTP client; point `LITERT_URL` at any Gemini-compatible server.
 ///   - **ollama**  — Ollama via its `/api/generate` REST API
 ///   - **stub**    — Synthetic metrics for demo / CI (no runtime needed)
 ///
