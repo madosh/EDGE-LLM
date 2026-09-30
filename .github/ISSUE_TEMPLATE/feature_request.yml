@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest new functionality or an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that the project makes hard today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like to see. Sketches of API shape or config are welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component most affected
+      options:
+        - control-plane (Go)
+        - agent (Rust)
+        - web (SvelteKit)
+        - docker-compose / monitoring
+        - docs
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why you'd rule them out.
+    validations:
+      required: false
