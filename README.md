@@ -10,6 +10,46 @@ A control plane and device agent system for managing **edge AI deployments at sc
 
 Deploy models to devices by tag, watch each device download, verify the SHA-256, load the model, and stream live inference telemetry — all from an operator dashboard.
 
+## How it works
+
+```mermaid
+flowchart LR
+    YOU(["You"])
+
+    subgraph SERVER["Your server or cloud"]
+        DASH["Dashboard"]
+        CP["Control plane"]
+    end
+
+    subgraph EDGE["At the edge"]
+        DEV["Edge devices<br/>Raspberry Pi, Jetson,<br/>mini PC"]
+        AI["AI model<br/>runs on the device"]
+    end
+
+    YOU -->|"1 · pick a model<br/>and devices"| DASH
+    DASH <-->|"2 · deploy /<br/>live status"| CP
+    CP <-->|"3 · job out /<br/>health back"| DEV
+    DEV -->|"4 · verify the file,<br/>start the model"| AI
+
+    classDef person fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
+    classDef cloud fill:#0f172a,stroke:#38bdf8,color:#e0f2fe
+    classDef edge fill:#1c1917,stroke:#f97316,color:#ffedd5
+    classDef model fill:#1a1a2e,stroke:#a78bfa,color:#ede9fe
+    class YOU person
+    class DASH,CP cloud
+    class DEV edge
+    class AI model
+    style SERVER fill:transparent,stroke:#38bdf8,stroke-dasharray:4 4
+    style EDGE fill:transparent,stroke:#f97316,stroke-dasharray:4 4
+```
+
+1. **You choose** a model and which devices should get it, for example "every device in Barcelona".
+2. **The control plane** keeps track of every device and deployment, and shows you live status on the dashboard.
+3. **It sends the job** to each matching device over a secure connection, and each device reports its health back.
+4. **Each device** downloads the model, checks it is exactly the file you published (by its SHA-256 fingerprint), and runs it locally. Answers are generated on the device, with no cloud call.
+
+### Detailed view
+
 ```mermaid
 flowchart TB
     %% ─── Top Layer: Operator ───
