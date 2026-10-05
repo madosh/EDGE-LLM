@@ -25,6 +25,19 @@ func TestDeploymentStatusConstants(t *testing.T) {
 	}
 }
 
+func TestIsAckStatus(t *testing.T) {
+	for _, s := range []string{"downloading", "verifying", "running", "failed"} {
+		if !model.IsAckStatus(s) {
+			t.Errorf("%q should be accepted from a device", s)
+		}
+	}
+	for _, s := range []string{"pending", "", "completed", "RUNNING", "hacked"} {
+		if model.IsAckStatus(s) {
+			t.Errorf("%q should be rejected from a device", s)
+		}
+	}
+}
+
 func TestDeviceDeploymentStatusConstants(t *testing.T) {
 	statuses := []model.DeviceDeploymentStatus{
 		model.DDPending,

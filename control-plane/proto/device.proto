@@ -45,15 +45,18 @@ message HeartbeatAck {
   int64 server_ts_unix = 1;
 }
 
-// TelemetryReport is emitted every 5 s while a model is loaded.
+// TelemetryReport is emitted on a fixed interval while a model is loaded.
 message TelemetryReport {
   string device_id = 1;
   string model_id  = 2;
-  float  tps       = 3; // tokens / second (fake for v0)
-  float  ttft_ms   = 4; // time-to-first-token ms (fake for v0)
-  float  mem_mb    = 5; // model memory footprint MB
-  string status    = 6; // "idle" | "loading" | "running"
+  float  tps       = 3; // decode tokens / second, measured by the runtime
+  float  ttft_ms   = 4; // time to first token, ms; 0 when unknown
+  float  mem_mb    = 5; // model memory footprint MB; 0 when the runtime can't report it
+  string status    = 6; // "running" | "error"
   int64  ts_unix   = 7;
+  // Where the numbers came from: "probe" (the agent's own timed request
+  // against the real runtime) or "stub" (synthetic values, demo/CI only).
+  string source    = 8;
 }
 
 message WatchRequest {
