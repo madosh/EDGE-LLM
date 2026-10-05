@@ -21,10 +21,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # ── runtime ──────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
+# Fixed uid/gid: scripts/gen-certs.sh hands this device's key to uid 10001.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r cami && useradd -r -g cami -s /sbin/nologin cami
+    && groupadd -r -g 10001 cami && useradd -r -u 10001 -g cami -s /sbin/nologin cami \
+    && mkdir -p /var/lib/cami/models && chown -R cami:cami /var/lib/cami
 
 COPY --from=builder /cami-agent /cami-agent
 
