@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
 	restapi "github.com/cami-fleet/control-plane/internal/api/rest"
 	natsclient "github.com/cami-fleet/control-plane/internal/events/nats"
+	"github.com/cami-fleet/control-plane/internal/metrics"
 	"github.com/cami-fleet/control-plane/internal/notify"
 	chstore "github.com/cami-fleet/control-plane/internal/store/clickhouse"
 	pgstore "github.com/cami-fleet/control-plane/internal/store/postgres"
@@ -34,14 +36,14 @@ func main() {
 	defer cancel()
 
 	// ── Postgres ───────────────────────────────────────────────────────────────
-	log.Info().Str("dsn", maskDSN(cfg.PostgresDSN)).Msg("connecting to postgres")
+	log.Info().Str("dsn", redactDSN(cfg.PostgresDSN)).Msg("connecting to postgres")
 	pg, err := pgstore.New(ctx, cfg.PostgresDSN)
 	if err != nil {
 		log.Fatal().Err(err).Msg("postgres init failed")
 	}
 
 	// ── ClickHouse ─────────────────────────────────────────────────────────────
-	log.Info().Str("dsn", maskDSN(cfg.ClickHouseDSN)).Msg("connecting to clickhouse")
+	log.Info().Str("dsn", redactDSN(cfg.ClickHouseDSN)).Msg("connecting to clickhouse")
 	ch, err := chstore.New(ctx, cfg.ClickHouseDSN)
 	if err != nil {
 		log.Fatal().Err(err).Msg("clickhouse init failed")
@@ -55,8 +57,16 @@ func main() {
 	}
 	defer nc.Close()
 
+	// ── Webhook notifier (optional) ──────────────────────────────────────────
+	webhookNotifier := notify.NewWebhookNotifier(cfg.WebhookURL)
+	if webhookNotifier != nil {
+		// The URL itself is a credential for Slack/Discord webhooks; log only the host.
+		log.Info().Str("host", webhookNotifier.Host()).Msg("webhook notifier enabled")
+	}
+
 	// ── gRPC server ────────────────────────────────────────────────────────────
 	grpcSrv := grpcapi.NewServer(pg, ch, nc)
+	grpcSrv.SetNotifier(webhookNotifier)
 
 	grpcAddr := ":" + cfg.GRPCPort
 	grpcServer, err := grpcapi.Listen(grpcAddr, cfg.CertDir, grpcSrv)
@@ -86,12 +96,6 @@ func main() {
 		}
 	}()
 
-	// ── Webhook notifier (optional) ──────────────────────────────────────────
-	webhookNotifier := notify.NewWebhookNotifier(cfg.WebhookURL)
-	if webhookNotifier != nil {
-		log.Info().Str("url", cfg.WebhookURL).Msg("webhook notifier enabled")
-	}
-
 	// ── Offline detector ──────────────────────────────────────────────────────
 	go runOfflineDetector(ctx, pg, nc, webhookNotifier)
 
@@ -110,7 +114,8 @@ func main() {
 	log.Info().Msg("HTTP server stopped")
 }
 
-// runOfflineDetector marks devices offline when last heartbeat > 30 s ago.
+// runOfflineDetector marks devices offline when last heartbeat > 30 s ago,
+// and refreshes the device and deployment gauges from the database.
 func runOfflineDetector(ctx context.Context, pg *pgstore.Store, nc *natsclient.Client, webhook *notify.WebhookNotifier) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -126,14 +131,30 @@ func runOfflineDetector(ctx context.Context, pg *pgstore.Store, nc *natsclient.C
 			}
 			for _, id := range ids {
 				log.Info().Str("device_id", id).Msg("device went offline")
-				nc.Publish("device."+id+".offline", map[string]string{"device_id": id})
-				restapi.DevicesGauge.WithLabelValues("offline").Inc()
-				restapi.DevicesGauge.WithLabelValues("online").Dec()
+				nc.Publish(natsclient.SubjectDeviceOffline(id), map[string]string{"device_id": id})
 				if webhook != nil {
-					go webhook.NotifyDeviceOffline(id, id)
+					name, err := pg.DeviceName(ctx, id)
+					if err != nil {
+						name = id
+					}
+					go webhook.NotifyDeviceOffline(id, name)
 				}
 			}
+			refreshGauges(ctx, pg)
 		}
+	}
+}
+
+func refreshGauges(ctx context.Context, pg *pgstore.Store) {
+	if counts, err := pg.CountDevicesByStatus(ctx); err == nil {
+		metrics.SetCounts(metrics.DevicesGauge, counts)
+	} else {
+		log.Warn().Err(err).Msg("count devices failed")
+	}
+	if counts, err := pg.CountDeploymentsByStatus(ctx); err == nil {
+		metrics.SetCounts(metrics.DeploymentsGauge, counts)
+	} else {
+		log.Warn().Err(err).Msg("count deployments failed")
 	}
 }
 
@@ -173,9 +194,12 @@ func getEnv(key, def string) string {
 	return def
 }
 
-func maskDSN(dsn string) string {
-	if len(dsn) > 30 {
-		return dsn[:30] + "..."
+// redactDSN hides the password in a connection URL. A DSN that does not parse
+// as a URL is not logged at all, since it may still contain a secret.
+func redactDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.Host == "" {
+		return "(unparseable DSN, not logged)"
 	}
-	return dsn
+	return u.Redacted()
 }

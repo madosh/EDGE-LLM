@@ -17,5 +17,7 @@ type Device struct {
 	LastSeenAt     time.Time         `json:"last_seen_at"`
 	CurrentModelID *string           `json:"current_model_id"`
 	AgentVersion   string            `json:"agent_version"`
+	Arch           string            `json:"arch"`
+	OS             string            `json:"os"`
 	CreatedAt      time.Time         `json:"created_at"`
 }

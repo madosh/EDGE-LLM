@@ -113,6 +113,9 @@ func zerologMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// discoverArtifacts lists the artifacts in dir that can be deployed: every
+// file that has a "<file>.sha256" sidecar holding its digest (a .litertlm or
+// .gguf model, for example), plus .tar.gz bundles for backward compatibility.
 func discoverArtifacts(dir, baseURL string) []artifactEntry {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -120,17 +123,27 @@ func discoverArtifacts(dir, baseURL string) []artifactEntry {
 	}
 	var arts []artifactEntry
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".tar.gz") {
+		file := e.Name()
+		if e.IsDir() || strings.HasPrefix(file, ".") || strings.HasSuffix(file, ".sha256") {
 			continue
 		}
-		name := strings.TrimSuffix(e.Name(), ".tar.gz")
 		sha := ""
-		if raw, err := os.ReadFile(filepath.Join(dir, e.Name()+".sha256")); err == nil {
-			sha = strings.TrimSpace(string(raw))
+		if raw, err := os.ReadFile(filepath.Join(dir, file+".sha256")); err == nil {
+			// Accept both a bare digest and `sha256sum` output ("<digest>  <file>").
+			if fields := strings.Fields(string(raw)); len(fields) > 0 {
+				sha = fields[0]
+			}
+		}
+		if sha == "" && !strings.HasSuffix(file, ".tar.gz") {
+			continue
+		}
+		name := strings.TrimSuffix(file, ".tar.gz")
+		if name == file {
+			name = strings.TrimSuffix(file, filepath.Ext(file))
 		}
 		arts = append(arts, artifactEntry{
 			Name:   name,
-			URL:    baseURL + "/artifacts/" + e.Name(),
+			URL:    baseURL + "/artifacts/" + file,
 			SHA256: sha,
 		})
 	}

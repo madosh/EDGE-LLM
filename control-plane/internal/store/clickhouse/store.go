@@ -22,6 +22,7 @@ type TelemetryPoint struct {
 	TTFTMs   float64   `json:"ttft_ms"`
 	MemMB    float64   `json:"mem_mb"`
 	Status   string    `json:"status"`
+	Source   string    `json:"source"`
 	Ts       time.Time `json:"ts"`
 }
 
@@ -67,20 +68,36 @@ func (s *Store) migrate(ctx context.Context) error {
 		ORDER BY (device_id, ts)
 		TTL ts + INTERVAL 7 DAY
 	`)
+	if err != nil {
+		return err
+	}
+	// "probe" = measured against the real runtime, "stub" = synthetic demo data.
+	_, err = s.db.ExecContext(ctx, `
+		ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS source LowCardinality(String) DEFAULT ''
+	`)
 	return err
 }
 
+// InsertTelemetry writes one report. Every device sends one row per interval,
+// and a plain single-row INSERT creates one ClickHouse part per row. With
+// async_insert the server buffers rows from all devices and flushes them as
+// one part; wait_for_async_insert=1 keeps each call blocked until its batch
+// is flushed, so errors still surface and the row is readable on return.
 func (s *Store) InsertTelemetry(ctx context.Context, r *model.TelemetryRow) error {
+	ctx = ch.Context(ctx, ch.WithSettings(ch.Settings{
+		"async_insert":          1,
+		"wait_for_async_insert": 1,
+	}))
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO telemetry (device_id, model_id, tps, ttft_ms, mem_mb, status, ts)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, r.DeviceID, r.ModelID, r.TPS, r.TTFTMs, r.MemMB, r.Status, r.Ts)
+		INSERT INTO telemetry (device_id, model_id, tps, ttft_ms, mem_mb, status, source, ts)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, r.DeviceID, r.ModelID, r.TPS, r.TTFTMs, r.MemMB, r.Status, r.Source, r.Ts)
 	return err
 }
 
 func (s *Store) QueryTelemetry(ctx context.Context, deviceID string, limit int) ([]TelemetryPoint, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT device_id, model_id, tps, ttft_ms, mem_mb, status, ts
+		SELECT device_id, model_id, tps, ttft_ms, mem_mb, status, source, ts
 		FROM telemetry
 		WHERE device_id = ?
 		ORDER BY ts DESC
@@ -94,7 +111,7 @@ func (s *Store) QueryTelemetry(ctx context.Context, deviceID string, limit int) 
 	var points []TelemetryPoint
 	for rows.Next() {
 		var p TelemetryPoint
-		if err := rows.Scan(&p.DeviceID, &p.ModelID, &p.TPS, &p.TTFTMs, &p.MemMB, &p.Status, &p.Ts); err != nil {
+		if err := rows.Scan(&p.DeviceID, &p.ModelID, &p.TPS, &p.TTFTMs, &p.MemMB, &p.Status, &p.Source, &p.Ts); err != nil {
 			return nil, err
 		}
 		points = append(points, p)
