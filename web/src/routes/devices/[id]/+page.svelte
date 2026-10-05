@@ -151,7 +151,9 @@
 									<td class="px-4 py-1.5 text-right text-violet-300">{pt.tps.toFixed(1)}</td>
 									<td class="px-4 py-1.5 text-right text-emerald-300">{pt.ttft_ms.toFixed(1)}</td>
 									<td class="px-4 py-1.5 text-right text-blue-300">{pt.mem_mb.toFixed(0)}</td>
-									<td class="px-4 py-1.5 text-gray-400">{pt.status}</td>
+									<td class="px-4 py-1.5 {pt.status === 'error' ? 'text-red-400' : 'text-gray-400'}">
+										{pt.status}{pt.source === 'stub' ? ' (stub)' : ''}
+									</td>
 								</tr>
 							{/each}
 						</tbody>
