@@ -232,6 +232,15 @@ The agent supports three runtime backends, selected via `RUNTIME_BACKEND` or aut
 | `CONTROL_PLANE_URL` | `https://localhost:9090` | gRPC endpoint |
 | `CERT_DIR` | `/certs` | mTLS certificate directory |
 
+> [!WARNING]
+> **Demo defaults are not production settings.** This repository ships
+> throwaway credentials so `docker compose up` works with no setup: the API key
+> is `changeme`, Postgres and ClickHouse both use `cami`/`cami`, and the mTLS
+> certificates are self-signed by `scripts/gen-certs.sh`. They grant access to
+> nothing outside a local container. Before exposing any part of this stack to a
+> network you don't control, read [SECURITY.md](SECURITY.md) and replace every
+> default.
+
 ---
 
 ## Development
@@ -303,6 +312,12 @@ The stack includes a full observability layer:
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
+
+## Security
+
+This is a reference project, not a hardened product. See [SECURITY.md](SECURITY.md)
+for how to report a vulnerability privately and what to change before running it
+on an untrusted network.
 
 ## License
 

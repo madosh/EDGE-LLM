@@ -1,0 +1,73 @@
+name: Bug report
+description: Something is not working as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. Please do **not** use this form for security
+        vulnerabilities — see [SECURITY.md](../blob/main/SECURITY.md) for private
+        reporting.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. cp .env.example .env
+        2. docker compose up --build
+        3. POST a deployment with ...
+        4. Device stays in `verifying` instead of reaching `running`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - control-plane (Go)
+        - agent (Rust)
+        - web (SvelteKit)
+        - docker-compose / monitoring
+        - docs
+        - not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Inference backend
+      options:
+        - stub (default)
+        - ollama
+        - litert
+        - not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, and Go/Rust/Node versions if running outside Compose.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact any keys or tokens before pasting.
+      render: shell
+    validations:
+      required: false
