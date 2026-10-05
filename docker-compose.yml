@@ -3,9 +3,10 @@ name: cami-fleet
 volumes:
   pg-data:
   ch-data:
-  certs:
+  certs:          # per-service certificate directories (see scripts/gen-certs.sh)
+  ca-private:     # CA private key — mounted only into cert-gen
+  model-cache:    # verified model artifacts, named by SHA-256
   ollama-data:
-  litert-cache:
 
 networks:
   fleet:
@@ -20,8 +21,12 @@ services:
       sh -c "apk add --no-cache openssl && sh /scripts/gen-certs.sh"
     environment:
       CERT_DIR: /certs
+      CA_DIR: /ca
+      # One certificate per device; its common name is the device name.
+      DEVICE_NAMES: "device-barcelona-1 device-barcelona-2 device-edge-litert device-edge-ollama"
     volumes:
       - certs:/certs
+      - ca-private:/ca
       - ./scripts/gen-certs.sh:/scripts/gen-certs.sh:ro
     networks:
       - fleet
@@ -94,37 +99,33 @@ services:
     networks:
       - fleet
 
-  # ── "LiteRT" REST backend (optional — Gemini-compatible inference server) ────
-  # IMPORTANT: Google LiteRT itself is an *on-device* runtime (Android/embedded),
-  # not a server — see examples/litert-android for the real thing. The agent's
-  # `litert` backend (agent/src/model_runtime.rs) is just an HTTP client that
-  # speaks the Gemini `generateContent` REST API, so it can point at ANY
-  # Gemini-compatible endpoint you front yourself (e.g. a wrapper around
-  # LiteRT-LM, or a hosted Gemini-compatible gateway).
-  #
-  # There is no official `lit serve` command in Google LiteRT — to use this
-  # backend, run your own server that exposes:
-  #   POST /v1beta/models/{model}:generateContent
-  # on port 8000, then set LITERT_URL on a device-agent below.
-  # Docs: https://ai.google.dev/edge/litert
-  #
-  # litert:
-  #   image: your-gemini-compatible-server:latest
-  #   ports: ["8000:8000"]
-  #   volumes:
-  #     - litert-cache:/root/.cache
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
-  #     interval: 10s
-  #     timeout: 10s
-  #     retries: 30
-  #   networks:
-  #     - fleet
-  #   restart: unless-stopped
+  # ── LiteRT-LM (real on-device inference) — profile "litert" ────────────────
+  # Google's LiteRT-LM CLI ships `litert-lm serve`, an OpenAI-compatible server
+  # (https://github.com/google-ai-edge/LiteRT-LM). The agent passes it the
+  # absolute path of the artifact it has just verified, so the .litertlm file
+  # that runs is byte-for-byte the one whose SHA-256 was checked. Both
+  # containers mount model-cache at the same path for that reason.
+  # On a real device (e.g. Raspberry Pi 5) run `litert-lm serve` next to the
+  # agent instead; it listens on 127.0.0.1:9379 by default.
+  litert:
+    profiles: ["litert"]
+    build:
+      context: runtimes/litert-lm
+    volumes:
+      - model-cache:/var/lib/cami/models
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9379/v1/models')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - fleet
+    restart: unless-stopped
 
   # ── Ollama (real LLM inference) ──────────────────────────────────────────────
   # For GPU support, add: deploy: { resources: { reservations: { devices: [{capabilities: [gpu]}] }}}
   ollama:
+    profiles: ["ollama"]
     image: ollama/ollama:latest
     volumes:
       - ollama-data:/root/.ollama
@@ -190,7 +191,12 @@ services:
       - "8080:8080"
       - "9090:9090"
     volumes:
-      - certs:/certs:ro
+      - type: volume
+        source: certs
+        target: /certs
+        read_only: true
+        volume:
+          subpath: server
       - ./artifacts:/artifacts:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health | grep -q ok"]
@@ -212,8 +218,8 @@ services:
       - fleet
     restart: unless-stopped
 
-  # ── Simulated device 1 (Jetson Orin, location=barcelona) — real Ollama inference
-  device-1:
+  # ── Simulated device 1 (Jetson Orin, location=barcelona) — stub inference ──
+  device-barcelona-1:
     build:
       context: .
       dockerfile: agent/Dockerfile
@@ -222,17 +228,20 @@ services:
       DEVICE_LABELS:       "location=barcelona,type=jetson-orin"
       CONTROL_PLANE_URL:   "https://control-plane:9090"
       CERT_DIR:            /certs
+      MODEL_CACHE_DIR:     /var/lib/cami/models
       RUST_LOG:            "cami_agent=info,warn"
-      RUNTIME_BACKEND:     "ollama"
-      OLLAMA_URL:          "http://ollama:11434"
-      # LITERT_URL:        "http://litert:8000"      # uncomment with litert service
-      # LITERT_MODEL:      "gemma3-1b"               # model name served by lit serve
+      RUNTIME_BACKEND:     "stub"
     volumes:
-      - certs:/certs:ro
+      # Only this device's own key and certificate.
+      - type: volume
+        source: certs
+        target: /certs
+        read_only: true
+        volume:
+          subpath: devices/device-barcelona-1
+      - model-cache:/var/lib/cami/models
     depends_on:
       control-plane:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
       cert-gen:
         condition: service_completed_successfully
@@ -241,7 +250,7 @@ services:
     restart: unless-stopped
 
   # ── Simulated device 2 (Raspberry Pi 5, location=barcelona) — stub inference
-  device-2:
+  device-barcelona-2:
     build:
       context: .
       dockerfile: agent/Dockerfile
@@ -250,17 +259,94 @@ services:
       DEVICE_LABELS:       "location=barcelona,type=rpi5"
       CONTROL_PLANE_URL:   "https://control-plane:9090"
       CERT_DIR:            /certs
+      MODEL_CACHE_DIR:     /var/lib/cami/models
       RUST_LOG:            "cami_agent=info,warn"
       RUNTIME_BACKEND:     "stub"
-      # OLLAMA_URL:        "http://ollama:11434"      # uncomment to use ollama
-      # LITERT_URL:        "http://litert:8000"       # uncomment with litert service
     volumes:
-      - certs:/certs:ro
+      # Only this device's own key and certificate.
+      - type: volume
+        source: certs
+        target: /certs
+        read_only: true
+        volume:
+          subpath: devices/device-barcelona-2
+      - model-cache:/var/lib/cami/models
     depends_on:
       control-plane:
         condition: service_healthy
       cert-gen:
         condition: service_completed_successfully
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Real LiteRT-LM device — `docker compose --profile litert up` ───────────
+  device-edge-litert:
+    profiles: ["litert"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    environment:
+      DEVICE_NAME:         device-edge-litert
+      DEVICE_LABELS:       "location=lab,runtime=litert"
+      CONTROL_PLANE_URL:   "https://control-plane:9090"
+      CERT_DIR:            /certs
+      MODEL_CACHE_DIR:     /var/lib/cami/models
+      RUST_LOG:            "cami_agent=info,warn"
+      RUNTIME_BACKEND:     "litert"
+      LITERT_URL:          "http://litert:9379"
+      LITERT_ACCELERATOR:  "cpu"
+    volumes:
+      # Only this device's own key and certificate.
+      - type: volume
+        source: certs
+        target: /certs
+        read_only: true
+        volume:
+          subpath: devices/device-edge-litert
+      - model-cache:/var/lib/cami/models
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      cert-gen:
+        condition: service_completed_successfully
+      litert:
+        condition: service_healthy
+    networks:
+      - fleet
+    restart: unless-stopped
+
+  # ── Real Ollama device — `docker compose --profile ollama up` ──────────────
+  device-edge-ollama:
+    profiles: ["ollama"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    environment:
+      DEVICE_NAME:         device-edge-ollama
+      DEVICE_LABELS:       "location=lab,runtime=ollama"
+      CONTROL_PLANE_URL:   "https://control-plane:9090"
+      CERT_DIR:            /certs
+      MODEL_CACHE_DIR:     /var/lib/cami/models
+      RUST_LOG:            "cami_agent=info,warn"
+      RUNTIME_BACKEND:     "ollama"
+      OLLAMA_URL:          "http://ollama:11434"
+    volumes:
+      # Only this device's own key and certificate.
+      - type: volume
+        source: certs
+        target: /certs
+        read_only: true
+        volume:
+          subpath: devices/device-edge-ollama
+      - model-cache:/var/lib/cami/models
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      cert-gen:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_healthy
     networks:
       - fleet
     restart: unless-stopped
@@ -274,7 +360,7 @@ services:
       API_KEY:              "${CAMI_API_KEY:-changeme}"
       CONTROL_PLANE_URL:    "http://control-plane:8080"
     ports:
-      - "5173:5173"
+      - "5173:3000"   # host 5173 (as documented) → adapter-node on 3000
     depends_on:
       control-plane:
         condition: service_healthy

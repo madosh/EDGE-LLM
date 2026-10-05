@@ -1,5 +1,6 @@
-// All requests go through the Vite dev-server proxy which injects X-Api-Key
-// and forwards to control-plane:8080.
+// Requests are relative (/api/...). The server adds X-Api-Key and forwards
+// them to the control plane: the Vite proxy in `npm run dev`, and
+// src/hooks.server.ts in the production build. The key never reaches the browser.
 
 export interface Device {
 	id: string;
@@ -9,6 +10,8 @@ export interface Device {
 	last_seen_at: string;
 	current_model_id: string | null;
 	agent_version: string;
+	arch: string;
+	os: string;
 	created_at: string;
 }
 
@@ -18,7 +21,10 @@ export interface TelemetryPoint {
 	tps: number;
 	ttft_ms: number;
 	mem_mb: number;
+	/** 'running', or 'error' when the probe against the runtime failed. */
 	status: string;
+	/** 'probe' = measured on the real runtime; 'stub' = synthetic demo data. */
+	source: string;
 	ts: string;
 }
 
@@ -37,7 +43,7 @@ export interface Deployment {
 	artifact_url: string;
 	artifact_sha256: string;
 	tag_selector: Record<string, string>;
-	status: 'pending' | 'in_progress' | 'completed' | 'failed';
+	status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'partial_failure';
 	created_at: string;
 	completed_at: string | null;
 	devices: DeviceDeployment[];
