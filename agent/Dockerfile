@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-COPY control-plane/proto/ ./proto/
+COPY control-plane/proto/ ./control-plane/proto/
 COPY agent/ ./agent/
 
 WORKDIR /build/agent

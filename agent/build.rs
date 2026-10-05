@@ -1,8 +1,9 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Proto lives one level up (mounted at /build/proto in Docker)
+    // The proto is owned by the control plane. Both the repo checkout and the
+    // agent Docker build keep it at ../control-plane/proto relative to agent/.
     tonic_build::configure()
         .build_server(false)
         .build_client(true)
-        .compile_protos(&["../proto/device.proto"], &["../proto"])?;
+        .compile_protos(&["../control-plane/proto/device.proto"], &["../control-plane/proto"])?;
     Ok(())
 }
