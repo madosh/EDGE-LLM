@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { api, type Deployment, type ArtifactInfo } from '$lib/api';
+	import { api, type Deployment, type ArtifactInfo, type Requirements } from '$lib/api';
 
 	let deployments: Deployment[] = [];
 	let artifacts: ArtifactInfo[] = [];
@@ -12,6 +12,15 @@
 	// Form state
 	let selectedArtifact: ArtifactInfo | null = null;
 	let tagSelectorRaw = 'location=barcelona';
+	let rolloutPercent = 100;
+	let minMemMb: number | null = null;
+	let accelerator: '' | 'cpu' | 'gpu' | 'npu' = '';
+	let allDevices = false;
+	let lastResult = '';
+	let actionError = '';
+	let busyId = '';
+
+	$: selectorEmpty = Object.keys(parseTagSelector(tagSelectorRaw)).length === 0;
 
 	async function load() {
 		try {
@@ -45,13 +54,27 @@
 		}
 		submitting = true;
 		formError = '';
+		lastResult = '';
+		const requirements: Requirements = {};
+		if (minMemMb && minMemMb > 0) requirements.min_mem_mb = minMemMb;
+		if (accelerator) requirements.accelerator = accelerator;
 		try {
-			await api.createDeployment({
+			const created = await api.createDeployment({
 				model_id: selectedArtifact.name,
 				artifact_url: selectedArtifact.url,
 				artifact_sha256: selectedArtifact.sha256,
-				tag_selector: parseTagSelector(tagSelectorRaw)
+				tag_selector: parseTagSelector(tagSelectorRaw),
+				rollout_percent: rolloutPercent,
+				requirements,
+				all_devices: allDevices
 			});
+			const t = created.targeting;
+			const skipped = Object.keys(t.skipped).length;
+			lastResult =
+				`Sent to ${t.targeted.length} device(s)` +
+				(skipped ? `, ${skipped} skipped (requirements not met)` : '') +
+				(t.held_back ? `, ${t.held_back} held back by the ${rolloutPercent}% rollout` : '') +
+				'.';
 			await load();
 		} catch (e: any) {
 			formError = e.message;
@@ -60,12 +83,44 @@
 		}
 	}
 
+	async function promote(dep: Deployment) {
+		busyId = dep.id;
+		actionError = '';
+		try {
+			await api.promoteDeployment(dep.id, 100);
+			await load();
+		} catch (e: any) {
+			actionError = e.message;
+		} finally {
+			busyId = '';
+		}
+	}
+
+	async function rollback(dep: Deployment) {
+		if (!confirm(`Roll back ${dep.model_id}? Devices return to the model they ran before.`)) return;
+		busyId = dep.id;
+		actionError = '';
+		try {
+			const r = await api.rollbackDeployment(dep.id);
+			const restored = Object.keys(r.restored).length;
+			actionError = r.no_previous.length
+				? `Rolled back. ${restored} device(s) restored; ${r.no_previous.length} had no earlier model and keep the current one.`
+				: '';
+			await load();
+		} catch (e: any) {
+			actionError = e.message;
+		} finally {
+			busyId = '';
+		}
+	}
+
 	const statusColors: Record<string, string> = {
 		pending: 'text-yellow-400',
 		in_progress: 'text-blue-400',
 		completed: 'text-emerald-400',
 		failed: 'text-red-400',
-		partial_failure: 'text-orange-400'
+		partial_failure: 'text-orange-400',
+		rolled_back: 'text-gray-500'
 	};
 
 	const deviceStatusColors: Record<string, string> = {
@@ -73,7 +128,9 @@
 		downloading: 'text-blue-400',
 		verifying: 'text-yellow-400',
 		running: 'text-emerald-400',
-		failed: 'text-red-400'
+		failed: 'text-red-400',
+		skipped: 'text-gray-500',
+		rolled_back: 'text-orange-400'
 	};
 
 	function relTime(ts: string): string {
@@ -137,6 +194,56 @@
 				<div class="mt-1.5 text-xs text-gray-600">
 					Matches devices with <em>all</em> listed labels
 				</div>
+				{#if selectorEmpty}
+					<label class="mt-2 flex items-center gap-2 text-xs text-yellow-400">
+						<input type="checkbox" bind:checked={allDevices} />
+						No selector: deploy to every device in the fleet
+					</label>
+				{/if}
+			</div>
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+			<div>
+				<label class="block text-xs text-gray-400 mb-1.5" for="rollout">
+					Rollout <span class="text-gray-600">(% of matching devices)</span>
+				</label>
+				<input
+					id="rollout"
+					type="number"
+					min="1"
+					max="100"
+					bind:value={rolloutPercent}
+					class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+				/>
+				<div class="mt-1.5 text-xs text-gray-600">Start small (e.g. 10) for a canary, then promote</div>
+			</div>
+			<div>
+				<label class="block text-xs text-gray-400 mb-1.5" for="minmem">
+					Min. device RAM <span class="text-gray-600">(MB, optional)</span>
+				</label>
+				<input
+					id="minmem"
+					type="number"
+					min="0"
+					placeholder="e.g. 4096"
+					bind:value={minMemMb}
+					class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+				/>
+			</div>
+			<div>
+				<label class="block text-xs text-gray-400 mb-1.5" for="accel">Accelerator <span class="text-gray-600">(optional)</span></label>
+				<select
+					id="accel"
+					bind:value={accelerator}
+					class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+				>
+					<option value="">any</option>
+					<option value="cpu">cpu</option>
+					<option value="gpu">gpu</option>
+					<option value="npu">npu</option>
+				</select>
+				<div class="mt-1.5 text-xs text-gray-600">Devices that don't qualify are skipped, with the reason</div>
 			</div>
 		</div>
 
@@ -144,7 +251,9 @@
 			<button class="btn-primary" on:click={submit} disabled={submitting}>
 				{submitting ? 'Deploying…' : 'Deploy →'}
 			</button>
-			{#if selectedArtifact}
+			{#if lastResult}
+				<span class="text-xs text-emerald-400">{lastResult}</span>
+			{:else if selectedArtifact}
 				<span class="text-xs text-gray-500">
 					→ <strong class="text-gray-300">{selectedArtifact.name}</strong>
 					to devices tagged <strong class="text-gray-300 font-mono">{tagSelectorRaw}</strong>
@@ -160,6 +269,9 @@
 		<div class="card text-center py-10 text-gray-500 text-sm">No deployments yet.</div>
 	{:else}
 		<div class="space-y-4">
+			{#if actionError}
+				<div class="text-yellow-400 text-sm bg-yellow-900/20 rounded px-3 py-2">{actionError}</div>
+			{/if}
 			{#each deployments as dep (dep.id)}
 				<div class="card space-y-3">
 					<div class="flex items-start justify-between gap-4">
@@ -174,9 +286,22 @@
 									<span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded font-mono">{k}={v}</span>
 								{/each}
 							</div>
+							{#if dep.rollout_percent < 100}
+								<span class="text-xs bg-violet-900/40 text-violet-300 px-2 py-0.5 rounded">{dep.rollout_percent}% rollout</span>
+							{/if}
 							<span class="text-xs font-medium {statusColors[dep.status] || 'text-gray-400'} uppercase tracking-wide">
-								{dep.status.replace('_', ' ')}
+								{dep.status.replace(/_/g, ' ')}
 							</span>
+							{#if dep.status !== 'rolled_back'}
+								{#if dep.rollout_percent < 100}
+									<button class="text-xs text-violet-300 hover:text-white disabled:opacity-50" disabled={busyId === dep.id} on:click={() => promote(dep)}>
+										Promote to 100%
+									</button>
+								{/if}
+								<button class="text-xs text-gray-400 hover:text-red-400 disabled:opacity-50" disabled={busyId === dep.id} on:click={() => rollback(dep)}>
+									Roll back
+								</button>
+							{/if}
 						</div>
 					</div>
 
@@ -184,9 +309,9 @@
 					{#if dep.devices && dep.devices.length > 0}
 						<div class="border-t border-gray-800 pt-3 grid grid-cols-2 md:grid-cols-3 gap-2">
 							{#each dep.devices as dd}
-								<div class="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
+								<div class="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2" title={dd.error_msg ?? ''}>
 									<span class="text-xs font-mono text-gray-300">{dd.device_name || dd.device_id.slice(0,8)}</span>
-									<span class="text-xs font-medium {deviceStatusColors[dd.status] || 'text-gray-400'}">{dd.status}</span>
+									<span class="text-xs font-medium {deviceStatusColors[dd.status] || 'text-gray-400'}">{dd.status.replace(/_/g, ' ')}</span>
 								</div>
 							{/each}
 						</div>

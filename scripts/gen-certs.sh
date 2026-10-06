@@ -19,6 +19,11 @@ DAYS="${CERT_DAYS:-825}"
 # fixed "cami" user from agent/Dockerfile for agents.
 SERVER_UID="${SERVER_UID:-65532}"
 AGENT_UID="${AGENT_UID:-10001}"
+# Extra names devices use to reach the control plane, e.g. a LAN address for a
+# physical Raspberry Pi: SERVER_SANS="DNS:fleet.local,IP:192.168.1.20".
+# The server certificate is issued once; to change its names, delete
+# $CERT_DIR/server and run this script again.
+SERVER_SANS="${SERVER_SANS:-}"
 
 mkdir -p "$CERT_DIR" "$CA_DIR"
 
@@ -66,11 +71,14 @@ trap 'rm -rf "$EXT_DIR"' EXIT
 
 # ── Control-plane server certificate ──────────────────────────────────────────
 if [ ! -f "$CERT_DIR/server/server.crt" ]; then
-    cat > "$EXT_DIR/server.cnf" << 'EOF'
+    case "$SERVER_SANS" in
+        *[!A-Za-z0-9.:,_-]*) echo "Invalid SERVER_SANS: '$SERVER_SANS'" >&2; exit 1 ;;
+    esac
+    cat > "$EXT_DIR/server.cnf" << EOF
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:control-plane,DNS:localhost,IP:127.0.0.1
+subjectAltName=DNS:control-plane,DNS:localhost,IP:127.0.0.1${SERVER_SANS:+,$SERVER_SANS}
 EOF
     echo "Issuing server certificate"
     sign "$CERT_DIR/server" server control-plane "$EXT_DIR/server.cnf" "$SERVER_UID"

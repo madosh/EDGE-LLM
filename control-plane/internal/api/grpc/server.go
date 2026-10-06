@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,6 +22,7 @@ import (
 
 	pb "github.com/cami-fleet/control-plane/gen"
 	natsclient "github.com/cami-fleet/control-plane/internal/events/nats"
+	"github.com/cami-fleet/control-plane/internal/fleet"
 	"github.com/cami-fleet/control-plane/internal/metrics"
 	"github.com/cami-fleet/control-plane/internal/model"
 	"github.com/cami-fleet/control-plane/internal/notify"
@@ -41,6 +43,8 @@ type Server struct {
 	// This is the only path a live deployment instruction takes to a device;
 	// deployments created while a device is offline reach it on reconnect.
 	watchChs map[string][]chan *pb.DeploymentInstruction
+	// taskChs maps device_id -> channels of open WatchTasks streams.
+	taskChs map[string][]chan *pb.AgentTask
 
 	// deviceNames caches device_id -> registered name (= certificate CN).
 	// A device's name never changes for a given id, so entries never go stale.
@@ -53,7 +57,26 @@ func NewServer(pg *pgstore.Store, ch *chstore.Store, nats *natsclient.Client) *S
 		ch:       ch,
 		nats:     nats,
 		watchChs: make(map[string][]chan *pb.DeploymentInstruction),
+		taskChs:  make(map[string][]chan *pb.AgentTask),
 	}
+}
+
+// PushTask sends a task to the device's open WatchTasks streams and reports
+// whether any stream took it. A task nobody took stays pending and is sent
+// when the device next connects.
+func (s *Server) PushTask(deviceID string, task *pb.AgentTask) bool {
+	s.mu.RLock()
+	chs := s.taskChs[deviceID]
+	s.mu.RUnlock()
+	delivered := false
+	for _, ch := range chs {
+		select {
+		case ch <- task:
+			delivered = true
+		default:
+		}
+	}
+	return delivered
 }
 
 // SetNotifier enables webhook alerts for failed deployments. A nil notifier
@@ -168,8 +191,8 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	if err != nil {
 		return nil, fmt.Errorf("register device: %w", err)
 	}
-	if err := s.pg.UpdateDevicePlatform(ctx, id, req.Arch, req.Os); err != nil {
-		log.Warn().Err(err).Str("device_id", id).Msg("store device platform failed")
+	if err := s.pg.UpdateDeviceCapabilities(ctx, id, req.Arch, req.Os, int64(req.MemTotalMb), req.Accelerators); err != nil {
+		log.Warn().Err(err).Str("device_id", id).Msg("store device capabilities failed")
 	}
 	s.deviceNames.Store(id, req.DeviceName)
 
@@ -255,6 +278,11 @@ func (s *Server) WatchDeployments(req *pb.WatchRequest, stream pb.AgentService_W
 		s.mu.Unlock()
 	}()
 
+	// Desired state: make sure the newest deployment this device should run
+	// applies to it. This is how a device that joined (or changed labels,
+	// or upgraded) after a deployment was created still receives it.
+	s.reconcile(ctx, deviceID)
+
 	// Send deployments not yet finished on this device: never started, or
 	// interrupted mid-download or mid-verify.
 	pending, err := s.pg.GetPendingDeployments(ctx, deviceID)
@@ -282,6 +310,40 @@ func (s *Server) WatchDeployments(req *pb.WatchRequest, stream pb.AgentService_W
 				return err
 			}
 		}
+	}
+}
+
+// reconcile targets the device with the deployment it should be running, if
+// it is not targeted already. Errors are logged: a failed reconcile must not
+// stop the device from receiving deployments it already has.
+func (s *Server) reconcile(ctx context.Context, deviceID string) {
+	dev, err := s.pg.GetDevice(ctx, deviceID)
+	if err != nil {
+		log.Warn().Err(err).Str("device_id", deviceID).Msg("reconcile: load device failed")
+		return
+	}
+	candidates, err := s.pg.MatchingDeployments(ctx, deviceID)
+	if err != nil {
+		log.Warn().Err(err).Str("device_id", deviceID).Msg("reconcile: matching deployments failed")
+		return
+	}
+	desired := fleet.Desired(candidates, deviceID)
+	if desired == nil {
+		return
+	}
+	// push=false: the pending query right after this sends it.
+	outcome, reason, err := fleet.Target(ctx, s.pg, nil, desired, *dev, false)
+	switch {
+	case err != nil:
+		log.Warn().Err(err).Str("device_id", deviceID).Msg("reconcile: target failed")
+	case outcome == fleet.Targeted:
+		log.Info().Str("device_id", deviceID).Str("deployment_id", desired.ID).Msg("reconcile: device now targeted")
+		if err := s.pg.ReopenDeployment(ctx, desired.ID); err != nil {
+			log.Warn().Err(err).Msg("reopen deployment failed")
+		}
+	case outcome == fleet.Skipped:
+		log.Info().Str("device_id", deviceID).Str("deployment_id", desired.ID).Str("reason", reason).
+			Msg("reconcile: device skipped")
 	}
 }
 
@@ -318,6 +380,87 @@ func (s *Server) AckDeployment(ctx context.Context, req *pb.DeploymentAck) (*pb.
 	}
 	if err := s.pg.CheckDeploymentCompletion(ctx, req.DeploymentId); err != nil {
 		log.Warn().Err(err).Msg("check deployment completion failed")
+	}
+	return &pb.Empty{}, nil
+}
+
+// WatchTasks streams questions for the device's AI agent: first any that
+// have no answer yet, then new ones as operators ask them.
+func (s *Server) WatchTasks(req *pb.WatchRequest, stream pb.AgentService_WatchTasksServer) error {
+	deviceID := req.DeviceId
+	ctx := stream.Context()
+	if err := s.authorizeDevice(ctx, "WatchTasks", deviceID); err != nil {
+		return err
+	}
+	metrics.GRPCStreamsGauge.WithLabelValues("tasks").Inc()
+	defer metrics.GRPCStreamsGauge.WithLabelValues("tasks").Dec()
+
+	ch := make(chan *pb.AgentTask, 8)
+	s.mu.Lock()
+	s.taskChs[deviceID] = append(s.taskChs[deviceID], ch)
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		chs := s.taskChs[deviceID]
+		for i, c := range chs {
+			if c == ch {
+				s.taskChs[deviceID] = append(chs[:i], chs[i+1:]...)
+				break
+			}
+		}
+		s.mu.Unlock()
+	}()
+
+	open, err := s.pg.OpenTasks(ctx, deviceID)
+	if err != nil {
+		log.Warn().Err(err).Str("device_id", deviceID).Msg("open tasks query failed")
+	}
+	for _, t := range open {
+		if err := stream.Send(&pb.AgentTask{TaskId: t.ID, Prompt: t.Prompt, MaxSteps: uint32(t.MaxSteps)}); err != nil {
+			return err
+		}
+		if err := s.pg.MarkTaskRunning(ctx, t.ID); err != nil {
+			log.Warn().Err(err).Msg("mark task running failed")
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case task := <-ch:
+			if err := stream.Send(task); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// ReportTask stores the agent's answer. The task must belong to the calling
+// device and must not already have a result.
+func (s *Server) ReportTask(ctx context.Context, req *pb.TaskResult) (*pb.Empty, error) {
+	if err := s.authorizeDevice(ctx, "ReportTask", req.DeviceId); err != nil {
+		return nil, err
+	}
+	if !model.IsTaskResultStatus(req.Status) {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid task status %q", req.Status)
+	}
+	err := s.pg.CompleteTask(ctx, req.TaskId, req.DeviceId, pgstore.TaskResult{
+		Status:     model.TaskStatus(req.Status),
+		Answer:     req.Answer,
+		ErrorMsg:   req.ErrorMsg,
+		Steps:      []byte(req.StepsJson),
+		ModelID:    req.ModelId,
+		DurationMs: int(req.DurationMs),
+	})
+	if errors.Is(err, pgstore.ErrTaskNotFound) {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.nats != nil {
+		s.nats.Publish("task."+req.TaskId+".done", map[string]string{"task_id": req.TaskId, "device_id": req.DeviceId, "status": req.Status})
 	}
 	return &pb.Empty{}, nil
 }

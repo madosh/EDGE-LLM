@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
@@ -139,6 +140,47 @@ func TestCreateDeploymentValidation(t *testing.T) {
 			},
 			expect: http.StatusBadRequest,
 		},
+		{
+			name: "sha256 not 64 hex characters",
+			body: map[string]any{
+				"model_id":        "gemma-4-e2b",
+				"artifact_url":    "http://example.com/model.litertlm",
+				"artifact_sha256": "abc123",
+				"tag_selector":    map[string]string{"location": "lab"},
+			},
+			expect: http.StatusBadRequest,
+		},
+		{
+			name: "empty selector without all_devices",
+			body: map[string]any{
+				"model_id":        "gemma-4-e2b",
+				"artifact_url":    "http://example.com/model.litertlm",
+				"artifact_sha256": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+			},
+			expect: http.StatusBadRequest,
+		},
+		{
+			name: "rollout above 100",
+			body: map[string]any{
+				"model_id":        "gemma-4-e2b",
+				"artifact_url":    "http://example.com/model.litertlm",
+				"artifact_sha256": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+				"tag_selector":    map[string]string{"location": "lab"},
+				"rollout_percent": 150,
+			},
+			expect: http.StatusBadRequest,
+		},
+		{
+			name: "unknown accelerator requirement",
+			body: map[string]any{
+				"model_id":        "gemma-4-e2b",
+				"artifact_url":    "http://example.com/model.litertlm",
+				"artifact_sha256": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+				"tag_selector":    map[string]string{"location": "lab"},
+				"requirements":    map[string]any{"accelerator": "tpu"},
+			},
+			expect: http.StatusBadRequest,
+		},
 	}
 
 	for _, tc := range tests {
@@ -265,3 +307,49 @@ var (
 	_ = restapi.NewRouter
 	_ = grpcapi.NewServer
 )
+
+func postJSON(t *testing.T, router http.Handler, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
+	req.Header.Set("X-Api-Key", "test-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestPromoteValidation(t *testing.T) {
+	router := setupTestRouter(t, t.TempDir())
+	for _, pct := range []int{0, -5, 101} {
+		w := postJSON(t, router, "/api/deployments/some-id/promote", map[string]any{"rollout_percent": pct})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("rollout_percent=%d: expected 400, got %d", pct, w.Code)
+		}
+	}
+}
+
+func TestCreateTaskValidation(t *testing.T) {
+	router := setupTestRouter(t, t.TempDir())
+	cases := []map[string]any{
+		{},
+		{"prompt": "   "},
+		{"prompt": strings.Repeat("x", 4001)},
+		{"prompt": "what model are you running?", "max_steps": 99},
+	}
+	for _, body := range cases {
+		w := postJSON(t, router, "/api/devices/some-device/tasks", body)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("body %v: expected 400, got %d", body, w.Code)
+		}
+	}
+}
+
+func TestRequestBodyIsLimited(t *testing.T) {
+	router := setupTestRouter(t, t.TempDir())
+	huge := map[string]any{"prompt": strings.Repeat("x", 2<<20)}
+	w := postJSON(t, router, "/api/devices/some-device/tasks", huge)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("a 2 MiB body should be rejected with 400, got %d", w.Code)
+	}
+}

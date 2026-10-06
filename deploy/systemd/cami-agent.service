@@ -1,0 +1,24 @@
+# The Cami Fleet device agent. Settings live in /etc/cami/agent.env
+# (start from deploy/cami-agent.env.example).
+#
+# Install: see docs/edge-device-setup.md
+[Unit]
+Description=Cami Fleet device agent
+After=network-online.target litert-lm-serve.service
+Wants=network-online.target litert-lm-serve.service
+
+[Service]
+User=cami
+Group=cami
+EnvironmentFile=/etc/cami/agent.env
+ExecStart=/usr/local/bin/cami-agent
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cami/models
+ReadOnlyPaths=/etc/cami
+
+[Install]
+WantedBy=multi-user.target

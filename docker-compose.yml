@@ -23,7 +23,9 @@ services:
       CERT_DIR: /certs
       CA_DIR: /ca
       # One certificate per device; its common name is the device name.
-      DEVICE_NAMES: "device-barcelona-1 device-barcelona-2 device-edge-litert device-edge-ollama"
+      DEVICE_NAMES: "device-barcelona-1 device-barcelona-2 device-edge-litert device-edge-ollama ${EXTRA_DEVICE_NAMES:-}"
+      # Names physical devices use to reach this host, e.g. "IP:192.168.1.20".
+      SERVER_SANS: "${SERVER_SANS:-}"
     volumes:
       - certs:/certs
       - ca-private:/ca

@@ -1,18 +1,21 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
-	pb "github.com/cami-fleet/control-plane/gen"
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
 	natsclient "github.com/cami-fleet/control-plane/internal/events/nats"
+	"github.com/cami-fleet/control-plane/internal/fleet"
 	"github.com/cami-fleet/control-plane/internal/model"
 	chstore "github.com/cami-fleet/control-plane/internal/store/clickhouse"
 	pgstore "github.com/cami-fleet/control-plane/internal/store/postgres"
@@ -81,78 +84,128 @@ func (h *Handlers) GetDeviceTelemetry(w http.ResponseWriter, r *http.Request) {
 }
 
 type createDeploymentReq struct {
-	ModelID        string            `json:"model_id"`
-	ArtifactURL    string            `json:"artifact_url"`
-	ArtifactSHA256 string            `json:"artifact_sha256"`
-	TagSelector    map[string]string `json:"tag_selector"`
+	ModelID        string             `json:"model_id"`
+	ArtifactURL    string             `json:"artifact_url"`
+	ArtifactSHA256 string             `json:"artifact_sha256"`
+	TagSelector    map[string]string  `json:"tag_selector"`
+	RolloutPercent int                `json:"rollout_percent"` // 1–100, default 100
+	Requirements   model.Requirements `json:"requirements"`
+	// AllDevices must be true to deploy with an empty selector, so a
+	// forgotten selector cannot silently target the whole fleet.
+	AllDevices bool `json:"all_devices"`
+}
+
+func (req *createDeploymentReq) validate() error {
+	if req.ModelID == "" || req.ArtifactURL == "" || req.ArtifactSHA256 == "" {
+		return errors.New("model_id, artifact_url, artifact_sha256 required")
+	}
+	if !isSHA256Hex(req.ArtifactSHA256) {
+		return errors.New("artifact_sha256 must be 64 hex characters")
+	}
+	if len(req.TagSelector) == 0 && !req.AllDevices {
+		return errors.New("tag_selector is empty: set all_devices=true to deploy to every device")
+	}
+	if req.RolloutPercent == 0 {
+		req.RolloutPercent = 100
+	}
+	if req.RolloutPercent < 1 || req.RolloutPercent > 100 {
+		return errors.New("rollout_percent must be between 1 and 100")
+	}
+	return req.Requirements.Validate()
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// decodeJSON reads a request body of at most 1 MiB.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	return json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(v)
+}
+
+// deploymentResponse is a deployment plus what happened per device. The
+// deployment's own fields stay at the top level of the JSON.
+type deploymentResponse struct {
+	*model.Deployment
+	Targeting *fleet.Summary `json:"targeting"`
 }
 
 func (h *Handlers) CreateDeployment(w http.ResponseWriter, r *http.Request) {
 	var req createDeploymentReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.ModelID == "" || req.ArtifactURL == "" || req.ArtifactSHA256 == "" {
-		http.Error(w, "model_id, artifact_url, artifact_sha256 required", http.StatusBadRequest)
 		return
 	}
 	if req.TagSelector == nil {
 		req.TagSelector = map[string]string{}
 	}
+	if err := req.validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	ctx := r.Context()
-
-	deployment, err := h.pg.CreateDeployment(ctx, req.ModelID, req.ArtifactURL, req.ArtifactSHA256, req.TagSelector)
+	deployment, err := h.pg.CreateDeploymentSpec(ctx, pgstore.DeploymentSpec{
+		ModelID:        req.ModelID,
+		ArtifactURL:    req.ArtifactURL,
+		ArtifactSHA256: strings.ToLower(req.ArtifactSHA256),
+		TagSelector:    req.TagSelector,
+		RolloutPercent: req.RolloutPercent,
+		Requirements:   req.Requirements,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Find matching devices (empty selector → match all)
-	devices, err := h.pg.FindDevicesByLabels(ctx, req.TagSelector)
+	summary := h.targetMatching(ctx, deployment)
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, deploymentResponse{Deployment: deployment, Targeting: summary})
+}
+
+// targetMatching applies a deployment to every device whose labels match,
+// subject to the rollout percentage and the requirements.
+func (h *Handlers) targetMatching(ctx context.Context, d *model.Deployment) *fleet.Summary {
+	summary := fleet.NewSummary()
+	devices, err := h.pg.FindDevicesByLabels(ctx, d.TagSelector)
 	if err != nil {
 		log.Warn().Err(err).Msg("find devices by labels failed")
+		return summary
 	}
-
 	for _, device := range devices {
-		if err := h.pg.CreateDeviceDeployment(ctx, deployment.ID, device.ID); err != nil {
-			log.Warn().Err(err).Str("device_id", device.ID).Msg("create device_deployment failed")
+		outcome, reason, err := fleet.Target(ctx, h.pg, h.grpcSrv, d, device, true)
+		if err != nil {
+			log.Warn().Err(err).Str("device_id", device.ID).Msg("target device failed")
 			continue
 		}
-
-		instr := &pb.DeploymentInstruction{
-			DeploymentId:   deployment.ID,
-			ModelId:        req.ModelID,
-			ArtifactUrl:    req.ArtifactURL,
-			ArtifactSha256: req.ArtifactSHA256,
-		}
-
-		// The one delivery path to the device: its open WatchDeployments
-		// stream. Offline devices get the deployment on reconnect.
-		h.grpcSrv.PushDeployment(device.ID, instr)
-
-		// Event for observers (the dashboard's event stream). Devices do not
-		// listen on NATS, so this cannot deliver the instruction a second time.
-		if h.nats != nil {
-			type natsDeploy struct {
-				DeploymentID   string `json:"deployment_id"`
-				ModelID        string `json:"model_id"`
-				ArtifactURL    string `json:"artifact_url"`
-				ArtifactSHA256 string `json:"artifact_sha256"`
-			}
-			h.nats.Publish(natsclient.SubjectDeployment(device.ID), natsDeploy{
-				DeploymentID:   deployment.ID,
-				ModelID:        req.ModelID,
-				ArtifactURL:    req.ArtifactURL,
-				ArtifactSHA256: req.ArtifactSHA256,
-			})
+		summary.Add(device.ID, outcome, reason)
+		if outcome == fleet.Targeted {
+			h.publishDeployment(device.ID, d)
 		}
 	}
+	return summary
+}
 
-	deployment.Devices = nil
-	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, deployment)
+// publishDeployment emits an event for observers (the dashboard's event
+// stream). Devices do not listen on NATS, so this never delivers twice.
+func (h *Handlers) publishDeployment(deviceID string, d *model.Deployment) {
+	if h.nats == nil {
+		return
+	}
+	h.nats.Publish(natsclient.SubjectDeployment(deviceID), map[string]string{
+		"deployment_id":   d.ID,
+		"model_id":        d.ModelID,
+		"artifact_url":    d.ArtifactURL,
+		"artifact_sha256": d.ArtifactSHA256,
+	})
 }
 
 func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
