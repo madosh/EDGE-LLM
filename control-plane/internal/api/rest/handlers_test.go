@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	restapi "github.com/cami-fleet/control-plane/internal/api/rest"
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
+	restapi "github.com/cami-fleet/control-plane/internal/api/rest"
 )
 
 func setupTestRouter(t *testing.T, artifactsDir string) http.Handler {
@@ -187,6 +187,36 @@ func TestListArtifacts(t *testing.T) {
 	}
 	if arts[0]["sha256"] != "abcdef123456" {
 		t.Errorf("expected sha256 abcdef123456, got %s", arts[0]["sha256"])
+	}
+}
+
+func TestListArtifactsIncludesModelFilesWithDigest(t *testing.T) {
+	dir := t.TempDir()
+	digest := "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+	os.WriteFile(filepath.Join(dir, "gemma-4-e2b.litertlm"), []byte("weights"), 0644)
+	// sha256sum output format: "<digest>  <file>"
+	os.WriteFile(filepath.Join(dir, "gemma-4-e2b.litertlm.sha256"), []byte(digest+"  gemma-4-e2b.litertlm\n"), 0644)
+	// A file without a digest sidecar is not deployable and is not listed.
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignore me"), 0644)
+
+	router := setupTestRouter(t, dir)
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts", nil)
+	req.Header.Set("X-Api-Key", "test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var arts []map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&arts); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("expected 1 artifact, got %d: %v", len(arts), arts)
+	}
+	if arts[0]["name"] != "gemma-4-e2b" || arts[0]["sha256"] != digest {
+		t.Errorf("unexpected artifact: %v", arts[0])
+	}
+	if arts[0]["url"] != "http://test:8080/artifacts/gemma-4-e2b.litertlm" {
+		t.Errorf("unexpected url: %s", arts[0]["url"])
 	}
 }
 

@@ -73,6 +73,16 @@ func (s *Store) migrate(ctx context.Context) error {
 			updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE(deployment_id, device_id)
 		);
+
+		-- Platform reported at registration; used for capability-aware targeting.
+		ALTER TABLE devices ADD COLUMN IF NOT EXISTS arch TEXT NOT NULL DEFAULT '';
+		ALTER TABLE devices ADD COLUMN IF NOT EXISTS os   TEXT NOT NULL DEFAULT '';
+
+		-- Reconnect lookup (device_id + status) and selector matching (labels @> ...).
+		CREATE INDEX IF NOT EXISTS idx_device_deployments_device_status
+			ON device_deployments (device_id, status);
+		CREATE INDEX IF NOT EXISTS idx_devices_labels
+			ON devices USING GIN (labels jsonb_path_ops);
 	`)
 	return err
 }
@@ -129,7 +139,7 @@ func (s *Store) MarkStaleDevicesOffline(ctx context.Context, threshold time.Dura
 
 func (s *Store) ListDevices(ctx context.Context) ([]model.Device, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, created_at
+		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, created_at
 		FROM devices ORDER BY created_at
 	`)
 	if err != nil {
@@ -141,7 +151,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]model.Device, error) {
 
 func (s *Store) GetDevice(ctx context.Context, id string) (*model.Device, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, created_at
+		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, created_at
 		FROM devices WHERE id = $1
 	`, id)
 	if err != nil {
@@ -164,7 +174,7 @@ func (s *Store) FindDevicesByLabels(ctx context.Context, selector map[string]str
 		return nil, fmt.Errorf("marshal selector: %w", err)
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, created_at
+		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, created_at
 		FROM devices WHERE labels @> $1
 	`, selectorJSON)
 	if err != nil {
@@ -179,13 +189,66 @@ func (s *Store) UpdateDeviceModel(ctx context.Context, deviceID, modelID string)
 	return err
 }
 
+// UpdateDevicePlatform records the CPU architecture and OS a device reported.
+func (s *Store) UpdateDevicePlatform(ctx context.Context, deviceID, arch, os string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE devices SET arch = $2, os = $3 WHERE id = $1`, deviceID, arch, os)
+	return err
+}
+
+// DeviceName returns the registered name of a device, which is also the
+// common name on that device's client certificate.
+func (s *Store) DeviceName(ctx context.Context, deviceID string) (string, error) {
+	var name string
+	err := s.pool.QueryRow(ctx, `SELECT name FROM devices WHERE id = $1`, deviceID).Scan(&name)
+	return name, err
+}
+
+// DeploymentHasDevice reports whether deviceID is a target of deploymentID.
+func (s *Store) DeploymentHasDevice(ctx context.Context, deploymentID, deviceID string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM device_deployments WHERE deployment_id = $1 AND device_id = $2
+		)
+	`, deploymentID, deviceID).Scan(&ok)
+	return ok, err
+}
+
+// CountDevicesByStatus returns the number of devices per status.
+func (s *Store) CountDevicesByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countBy(ctx, `SELECT status, COUNT(*) FROM devices GROUP BY status`)
+}
+
+// CountDeploymentsByStatus returns the number of deployments per status.
+func (s *Store) CountDeploymentsByStatus(ctx context.Context) (map[string]int, error) {
+	return s.countBy(ctx, `SELECT status, COUNT(*) FROM deployments GROUP BY status`)
+}
+
+func (s *Store) countBy(ctx context.Context, query string) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var key string
+		var n int
+		if err := rows.Scan(&key, &n); err != nil {
+			return nil, err
+		}
+		counts[key] = n
+	}
+	return counts, rows.Err()
+}
+
 func scanDevices(rows pgx.Rows) ([]model.Device, error) {
 	var devices []model.Device
 	for rows.Next() {
 		var d model.Device
 		var labelsJSON []byte
 		if err := rows.Scan(&d.ID, &d.Name, &labelsJSON, &d.Status,
-			&d.LastSeenAt, &d.CurrentModelID, &d.AgentVersion, &d.CreatedAt); err != nil {
+			&d.LastSeenAt, &d.CurrentModelID, &d.AgentVersion, &d.Arch, &d.OS, &d.CreatedAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(labelsJSON, &d.Labels); err != nil {
@@ -229,12 +292,17 @@ func (s *Store) CreateDeviceDeployment(ctx context.Context, deploymentID, device
 	return err
 }
 
+// GetPendingDeployments returns deployments this device has not finished:
+// never started, or interrupted mid-download or mid-verify (e.g. the agent
+// crashed). Re-sending the in-flight ones stops a crash leaving a device stuck
+// in "downloading" forever; the agent skips IDs it is already working on.
 func (s *Store) GetPendingDeployments(ctx context.Context, deviceID string) ([]model.Deployment, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT d.id, d.model_id, d.artifact_url, d.artifact_sha256
 		FROM deployments d
 		JOIN device_deployments dd ON dd.deployment_id = d.id
-		WHERE dd.device_id = $1 AND dd.status IN ('pending')
+		WHERE dd.device_id = $1 AND dd.status IN ('pending', 'downloading', 'verifying')
+		ORDER BY d.created_at
 	`, deviceID)
 	if err != nil {
 		return nil, err
@@ -261,6 +329,14 @@ func (s *Store) UpdateDeviceDeploymentStatus(ctx context.Context, deploymentID, 
 		SET status = $3, error_msg = $4, updated_at = NOW()
 		WHERE deployment_id = $1 AND device_id = $2
 	`, deploymentID, deviceID, status, errMsgPtr)
+	if err != nil {
+		return err
+	}
+	// The first progress report moves the whole deployment out of "pending".
+	_, err = s.pool.Exec(ctx, `
+		UPDATE deployments SET status = 'in_progress'
+		WHERE id = $1 AND status = 'pending'
+	`, deploymentID)
 	return err
 }
 
