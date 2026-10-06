@@ -60,6 +60,13 @@ func NewRouter(
 		r.Post("/api/deployments", h.CreateDeployment)
 		r.Get("/api/deployments", h.ListDeployments)
 		r.Get("/api/deployments/{id}", h.GetDeployment)
+		r.Post("/api/deployments/{id}/promote", h.PromoteDeployment)
+		r.Post("/api/deployments/{id}/rollback", h.RollbackDeployment)
+
+		// Questions for the AI agent on a device
+		r.Post("/api/devices/{id}/tasks", h.CreateTask)
+		r.Get("/api/devices/{id}/tasks", h.ListTasks)
+		r.Get("/api/tasks/{id}", h.GetTask)
 
 		// Fleet-wide telemetry
 		r.Get("/api/telemetry/fleet", h.GetFleetSummary)
