@@ -128,10 +128,12 @@ func (h *Handlers) CreateDeployment(w http.ResponseWriter, r *http.Request) {
 			ArtifactSha256: req.ArtifactSHA256,
 		}
 
-		// Push to any live WatchDeployments streams for this device
+		// The one delivery path to the device: its open WatchDeployments
+		// stream. Offline devices get the deployment on reconnect.
 		h.grpcSrv.PushDeployment(device.ID, instr)
 
-		// Also publish on NATS so other control-plane instances / future consumers see it
+		// Event for observers (the dashboard's event stream). Devices do not
+		// listen on NATS, so this cannot deliver the instruction a second time.
 		if h.nats != nil {
 			type natsDeploy struct {
 				DeploymentID   string `json:"deployment_id"`

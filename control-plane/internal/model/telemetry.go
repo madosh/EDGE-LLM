@@ -9,5 +9,6 @@ type TelemetryRow struct {
 	TTFTMs   float32
 	MemMB    float32
 	Status   string
+	Source   string
 	Ts       time.Time
 }

@@ -64,7 +64,8 @@
 		pending: 'text-yellow-400',
 		in_progress: 'text-blue-400',
 		completed: 'text-emerald-400',
-		failed: 'text-red-400'
+		failed: 'text-red-400',
+		partial_failure: 'text-orange-400'
 	};
 
 	const deviceStatusColors: Record<string, string> = {

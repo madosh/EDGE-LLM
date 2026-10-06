@@ -3,10 +3,15 @@ use std::collections::HashMap;
 
 use crate::model_runtime::RuntimeBackend;
 
+/// Default address of `litert-lm serve` running on the same device.
+pub const DEFAULT_LITERT_URL: &str = "http://127.0.0.1:9379";
+pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "cami-agent", about = "Cami Fleet device agent")]
 pub struct Config {
-    /// Displayed name for this device (must be unique in the fleet)
+    /// Displayed name for this device (must be unique in the fleet, and must
+    /// equal the common name on this device's client certificate)
     #[arg(long, env = "DEVICE_NAME", default_value = "device-001")]
     pub device_name: String,
 
@@ -31,14 +36,24 @@ pub struct Config {
     #[arg(long, env = "OLLAMA_URL", default_value = "")]
     pub ollama_url: String,
 
-    /// LiteRT server base URL (e.g. "http://litert:8000").
+    /// URL of `litert-lm serve` (LiteRT-LM's OpenAI-compatible server).
     #[arg(long, env = "LITERT_URL", default_value = "")]
     pub litert_url: String,
 
-    /// Model name override for LiteRT or Ollama.
-    /// Defaults to the model_id from the deployment instruction.
-    #[arg(long, env = "LITERT_MODEL", default_value = "")]
-    pub litert_model: String,
+    /// LiteRT-LM accelerator: "cpu", "gpu" or "npu".
+    #[arg(long, env = "LITERT_ACCELERATOR", default_value = "cpu")]
+    pub litert_accelerator: String,
+
+    /// Where verified model artifacts are stored, named by SHA-256. With the
+    /// litert backend, `litert-lm serve` must see this directory at the same
+    /// absolute path.
+    #[arg(long, env = "MODEL_CACHE_DIR", default_value = "/var/lib/cami/models")]
+    pub model_cache_dir: String,
+
+    /// Seconds between telemetry probes. Each probe runs a short real
+    /// generation, so it costs device compute; keep it well above a few seconds.
+    #[arg(long, env = "PROBE_INTERVAL_SECS", default_value_t = 30)]
+    pub probe_interval_secs: u64,
 }
 
 impl Config {
@@ -57,39 +72,38 @@ impl Config {
     }
 
     /// Resolve the inference backend from explicit `RUNTIME_BACKEND` or
-    /// auto-detect from URL env vars.  `model_id` is the deployment's model
-    /// identifier used as a fallback model name.
-    pub fn resolve_backend(&self, model_id: &str) -> RuntimeBackend {
+    /// auto-detect from URL env vars (LiteRT > Ollama > Stub).
+    pub fn resolve_backend(&self) -> RuntimeBackend {
         let backend = self.runtime_backend.trim().to_lowercase();
+        let litert = |url: String| RuntimeBackend::LiteRT {
+            url,
+            accelerator: self.accelerator(),
+        };
 
         match backend.as_str() {
-            "litert" => {
-                let url = non_empty(&self.litert_url).unwrap_or("http://localhost:8000".to_string());
-                let model = non_empty(&self.litert_model).unwrap_or_else(|| model_id.to_string());
-                RuntimeBackend::LiteRT { url, model }
-            }
-            "ollama" => {
-                let url = non_empty(&self.ollama_url).unwrap_or("http://localhost:11434".to_string());
-                RuntimeBackend::Ollama {
-                    url,
-                    model: model_id.to_string(),
-                }
-            }
+            "litert" => litert(non_empty(&self.litert_url).unwrap_or_else(|| DEFAULT_LITERT_URL.to_string())),
+            "ollama" => RuntimeBackend::Ollama {
+                url: non_empty(&self.ollama_url).unwrap_or_else(|| DEFAULT_OLLAMA_URL.to_string()),
+            },
             "stub" => RuntimeBackend::Stub,
             _ => {
-                // Auto-detect: prefer LiteRT > Ollama > Stub
                 if let Some(url) = non_empty(&self.litert_url) {
-                    let model = non_empty(&self.litert_model).unwrap_or_else(|| model_id.to_string());
-                    RuntimeBackend::LiteRT { url, model }
+                    litert(url)
                 } else if let Some(url) = non_empty(&self.ollama_url) {
-                    RuntimeBackend::Ollama {
-                        url,
-                        model: model_id.to_string(),
-                    }
+                    RuntimeBackend::Ollama { url }
                 } else {
                     RuntimeBackend::Stub
                 }
             }
+        }
+    }
+
+    /// The configured LiteRT-LM accelerator; anything unrecognised falls back
+    /// to "cpu", which every LiteRT-LM build supports.
+    pub fn accelerator(&self) -> String {
+        match self.litert_accelerator.trim().to_lowercase().as_str() {
+            a @ ("cpu" | "gpu" | "npu") => a.to_string(),
+            _ => "cpu".to_string(),
         }
     }
 }
@@ -116,7 +130,9 @@ mod tests {
             runtime_backend: "".into(),
             ollama_url: "".into(),
             litert_url: "".into(),
-            litert_model: "".into(),
+            litert_accelerator: "cpu".into(),
+            model_cache_dir: "/var/lib/cami/models".into(),
+            probe_interval_secs: 30,
         }
     }
 
@@ -148,53 +164,49 @@ mod tests {
 
     #[test]
     fn test_auto_detect_stub_when_empty() {
-        let cfg = base_cfg();
-        assert_eq!(cfg.resolve_backend("model-a").name(), "stub");
+        assert_eq!(base_cfg().resolve_backend(), RuntimeBackend::Stub);
     }
 
     #[test]
     fn test_auto_detect_ollama() {
         let mut cfg = base_cfg();
         cfg.ollama_url = "http://ollama:11434".into();
-        let b = cfg.resolve_backend("my-model");
-        assert_eq!(b.name(), "ollama");
-        if let RuntimeBackend::Ollama { url, model } = b {
-            assert_eq!(url, "http://ollama:11434");
-            assert_eq!(model, "my-model");
-        } else {
-            panic!("expected Ollama");
-        }
+        assert_eq!(
+            cfg.resolve_backend(),
+            RuntimeBackend::Ollama {
+                url: "http://ollama:11434".into()
+            }
+        );
     }
 
     #[test]
     fn test_auto_detect_litert() {
         let mut cfg = base_cfg();
-        cfg.litert_url = "http://litert:8000".into();
-        let b = cfg.resolve_backend("gemma-4-e2b");
-        assert_eq!(b.name(), "litert");
-        if let RuntimeBackend::LiteRT { url, model } = b {
-            assert_eq!(url, "http://litert:8000");
-            assert_eq!(model, "gemma-4-e2b");
-        } else {
-            panic!("expected LiteRT");
-        }
+        cfg.litert_url = "http://litert:9379".into();
+        assert_eq!(
+            cfg.resolve_backend(),
+            RuntimeBackend::LiteRT {
+                url: "http://litert:9379".into(),
+                accelerator: "cpu".into()
+            }
+        );
     }
 
     #[test]
     fn test_litert_preferred_over_ollama() {
         let mut cfg = base_cfg();
-        cfg.litert_url = "http://litert:8000".into();
+        cfg.litert_url = "http://litert:9379".into();
         cfg.ollama_url = "http://ollama:11434".into();
-        assert_eq!(cfg.resolve_backend("m").name(), "litert");
+        assert_eq!(cfg.resolve_backend().name(), "litert");
     }
 
     #[test]
     fn test_explicit_backend_overrides() {
         let mut cfg = base_cfg();
-        cfg.litert_url = "http://litert:8000".into();
+        cfg.litert_url = "http://litert:9379".into();
         cfg.ollama_url = "http://ollama:11434".into();
         cfg.runtime_backend = "ollama".into();
-        assert_eq!(cfg.resolve_backend("m").name(), "ollama");
+        assert_eq!(cfg.resolve_backend().name(), "ollama");
     }
 
     #[test]
@@ -202,19 +214,27 @@ mod tests {
         let mut cfg = base_cfg();
         cfg.ollama_url = "http://ollama:11434".into();
         cfg.runtime_backend = "stub".into();
-        assert_eq!(cfg.resolve_backend("m").name(), "stub");
+        assert_eq!(cfg.resolve_backend(), RuntimeBackend::Stub);
     }
 
     #[test]
-    fn test_litert_model_override() {
+    fn test_explicit_litert_defaults_to_local_server() {
         let mut cfg = base_cfg();
-        cfg.litert_url = "http://litert:8000".into();
-        cfg.litert_model = "gemma3-1b".into();
-        let b = cfg.resolve_backend("ignored-model-id");
-        if let RuntimeBackend::LiteRT { model, .. } = b {
-            assert_eq!(model, "gemma3-1b");
-        } else {
-            panic!("expected LiteRT");
-        }
+        cfg.runtime_backend = "litert".into();
+        cfg.litert_accelerator = "GPU".into();
+        assert_eq!(
+            cfg.resolve_backend(),
+            RuntimeBackend::LiteRT {
+                url: DEFAULT_LITERT_URL.into(),
+                accelerator: "gpu".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_unknown_accelerator_falls_back_to_cpu() {
+        let mut cfg = base_cfg();
+        cfg.litert_accelerator = "tpu".into();
+        assert_eq!(cfg.accelerator(), "cpu");
     }
 }

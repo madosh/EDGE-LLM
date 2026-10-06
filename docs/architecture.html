@@ -584,11 +584,11 @@ flowchart TD
     OU -->|yes| OLLAMA
     OU -->|no| STUBR
 
-    LITERT --> WARM1["Health check<br/>GET litert_url/"]
-    WARM1 --> GEN1["Warmup<br/>POST /v1beta/models/name:generateContent"]
+    LITERT --> WARM1["Health check<br/>GET /v1/models"]
+    WARM1 --> GEN1["Load verified file<br/>POST /v1/chat/completions<br/>model = path,accelerator"]
     GEN1 --> READY["ModelHandle created<br/>Telemetry loop starts"]
 
-    OLLAMA --> PULL["Pull model<br/>POST /api/pull"]
+    OLLAMA --> PULL["Upload verified blob + create<br/>POST /api/blobs/sha256:… , /api/create"]
     PULL --> GEN2["Warmup<br/>POST /api/generate"]
     GEN2 --> READY
 
@@ -606,13 +606,13 @@ flowchart TD
     <!-- backend comparison cards -->
     <div class="grid-3">
       <div class="backend-card" style="border-top: 3px solid #4ecdc4;">
-        <h4>Google LiteRT</h4>
-        <div class="subtitle">Edge-optimized inference with NPU/GPU acceleration</div>
+        <h4>Google LiteRT-LM</h4>
+        <div class="subtitle">On-device LLM runtime with CPU, GPU and NPU backends</div>
         <div class="props">
-          <div class="prop"><span class="key">API</span><span class="value">Gemini-compatible REST (<code>/v1beta/models/:generateContent</code>)</span></div>
-          <div class="prop"><span class="key">Served by</span><span class="value"><code>lit serve --model gemma3-1b --port 8000</code></span></div>
-          <div class="prop"><span class="key">Metrics</span><span class="value">tps and TTFT from <code>usageMetadata</code> token counts</span></div>
-          <div class="prop"><span class="key">Env vars</span><span class="value"><code>LITERT_URL</code>, <code>LITERT_MODEL</code></span></div>
+          <div class="prop"><span class="key">API</span><span class="value">OpenAI-compatible REST (<code>/v1/chat/completions</code>), model = absolute path of the verified <code>.litertlm</code></span></div>
+          <div class="prop"><span class="key">Served by</span><span class="value"><code>litert-lm serve</code> (port 9379) on the device</span></div>
+          <div class="prop"><span class="key">Metrics</span><span class="value">TTFT from the first streamed token; tps from <code>usage.completion_tokens</code></span></div>
+          <div class="prop"><span class="key">Env vars</span><span class="value"><code>LITERT_URL</code>, <code>LITERT_ACCELERATOR</code></span></div>
           <div class="prop"><span class="key">Best for</span><span class="value">Mobile, RPi, Jetson, MediaTek, Qualcomm NPU devices</span></div>
         </div>
       </div>
@@ -654,13 +654,13 @@ flowchart TD
         <tbody>
           <tr>
             <td>Tokens/sec (tps)</td>
-            <td><code>candidatesTokenCount / elapsed_time</code></td>
+            <td><code>(completion_tokens - 1) / time after first token</code></td>
             <td><code>eval_count / eval_duration</code></td>
             <td>Random ~25-31</td>
           </tr>
           <tr>
             <td>TTFT (ms)</td>
-            <td><code>elapsed - (tokens / tps)</code></td>
+            <td><code>first streamed token - request start</code></td>
             <td><code>prompt_eval_duration / 1M</code></td>
             <td>Random ~100-140</td>
           </tr>
@@ -981,8 +981,10 @@ flowchart TD
           <tr><td><code>CONTROL_PLANE_URL</code></td><td><code>https://localhost:9090</code></td><td>Agent</td><td>gRPC endpoint of the control plane</td></tr>
           <tr><td><code>CERT_DIR</code></td><td><code>/certs</code></td><td>Agent</td><td>mTLS certificate directory</td></tr>
           <tr><td><code>RUNTIME_BACKEND</code></td><td><em>(auto-detect)</em></td><td>Agent</td><td>Force backend: <code>litert</code>, <code>ollama</code>, or <code>stub</code></td></tr>
-          <tr><td><code>LITERT_URL</code></td><td><em>(empty)</em></td><td>Agent</td><td>LiteRT server endpoint (e.g. <code>http://litert:8000</code>)</td></tr>
-          <tr><td><code>LITERT_MODEL</code></td><td><em>(deployment model_id)</em></td><td>Agent</td><td>Override model name for <code>lit serve</code></td></tr>
+          <tr><td><code>LITERT_URL</code></td><td><em>(empty)</em></td><td>Agent</td><td><code>litert-lm serve</code> endpoint (e.g. <code>http://litert:9379</code>)</td></tr>
+          <tr><td><code>LITERT_ACCELERATOR</code></td><td><code>cpu</code></td><td>Agent</td><td>LiteRT-LM backend: <code>cpu</code>, <code>gpu</code>, or <code>npu</code></td></tr>
+          <tr><td><code>MODEL_CACHE_DIR</code></td><td><code>/var/lib/cami/models</code></td><td>Agent</td><td>Verified artifacts, named by SHA-256</td></tr>
+          <tr><td><code>PROBE_INTERVAL_SECS</code></td><td><code>30</code></td><td>Agent</td><td>Seconds between telemetry probes</td></tr>
           <tr><td><code>OLLAMA_URL</code></td><td><em>(empty)</em></td><td>Agent</td><td>Ollama API endpoint (e.g. <code>http://ollama:11434</code>)</td></tr>
         </tbody>
       </table>
