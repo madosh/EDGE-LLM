@@ -114,14 +114,17 @@ flowchart TB
 
 ## Features
 
-- **Tag-based deployment** — push models to devices matching label selectors (e.g. `location=barcelona`)
+- **Tag-based deployment as desired state** — deploy to a label selector (e.g. `location=barcelona`); a device that joins later, or changes its labels, gets the newest matching deployment when it connects
+- **Staged rollout and rollback** — start with a canary percentage, promote to 100%, or roll back so every device returns to the model it ran before (usually still in its verified cache, so no download)
+- **Model requirements** — a deployment can require RAM, an accelerator or a CPU architecture; devices that don't qualify are skipped with the reason instead of failing at load time
+- **Ask a device** — an AI agent on the device answers questions with the model it runs, calling read-only local tools (status, cached models) through LiteRT-LM function calling
 - **Verified artifacts, verified execution** — the agent streams each artifact to disk while hashing it, keeps it only if the SHA-256 matches, and the runtime loads *that exact file*
 - **Per-device mTLS identity** — gRPC over TLS 1.3; each device has its own certificate, and the control plane checks every request against the certificate's name
 - **Real on-device inference** — Google [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) (`litert-lm serve`), Ollama, or a stub for demos and CI
 - **Honest telemetry** — time to first token from the first streamed token, decode speed from real token counts; a failing runtime shows as `error`, not as made-up numbers
 - **Offline detection** — heartbeat watchdog marks devices offline after 30s
 - **Event bus** — NATS for device and deployment events
-- **Operator UI** — SvelteKit dashboard with fleet overview, deploy form, and device detail
+- **Operator UI** — SvelteKit dashboard with fleet overview, deploy form (rollout and requirements), promote/rollback, and device detail with the agent chat
 
 ---
 
@@ -194,6 +197,40 @@ curl -s -X POST http://localhost:8080/api/deployments \
 
 Each device cycles through `pending → downloading → verifying → running` within seconds. The sample artifact is a placeholder file, so only the stub backend can "run" it; a real runtime rejects it.
 
+An empty `tag_selector` targets every device and must be confirmed with `"all_devices": true`.
+
+### Canary, promote, roll back
+
+```bash
+# 1. Send a new model to 10% of matching devices, only those with 4 GB+ RAM.
+curl -s -X POST http://localhost:8080/api/deployments -H "X-Api-Key: changeme" \
+  -H "Content-Type: application/json" -d "{
+    \"model_id\": \"gemma-4-e2b\", \"artifact_url\": \"...\", \"artifact_sha256\": \"$SHA\",
+    \"tag_selector\": {\"location\": \"barcelona\"},
+    \"rollout_percent\": 10,
+    \"requirements\": {\"min_mem_mb\": 4096}
+  }" | jq .targeting      # → which devices got it, which were skipped and why
+
+# 2. Looks good: promote to everyone.
+curl -s -X POST http://localhost:8080/api/deployments/$ID/promote -H "X-Api-Key: changeme" \
+  -d '{"rollout_percent": 100}'
+
+# 3. Or not: roll back. Devices return to the model they ran before.
+curl -s -X POST http://localhost:8080/api/deployments/$ID/rollback -H "X-Api-Key: changeme"
+```
+
+The rollout is deterministic per device: raising the percentage only ever adds devices.
+
+### Ask a device
+
+```bash
+curl -s -X POST http://localhost:8080/api/devices/$DEVICE_ID/tasks -H "X-Api-Key: changeme" \
+  -d '{"prompt": "How much free memory do you have, and which model are you running?"}'
+curl -s http://localhost:8080/api/devices/$DEVICE_ID/tasks -H "X-Api-Key: changeme" | jq '.[0]'
+```
+
+The agent on the device answers with its loaded model. It may call three read-only tools first (`device_status`, `list_cached_models`, `current_model`); each call and its result is stored with the answer. On the stub backend the "agent" just reports the device status, labelled as such.
+
 ---
 
 ## Inference Backends
@@ -216,7 +253,7 @@ Every artifact is stored under its SHA-256 in `MODEL_CACHE_DIR`. A cached file i
 2. Ask `litert-lm serve` to load `"<absolute path>,<accelerator>"` — the server accepts a file path as the model, so the verified bytes are what runs.
 3. Every `PROBE_INTERVAL_SECS`, stream a short completion: time to first token is when the first token arrives; decode speed comes from the server's `usage.completion_tokens`.
 
-**On a real device** (e.g. Raspberry Pi 5):
+**On a real device** (e.g. Raspberry Pi 5) — full walkthrough with systemd services and a benchmark script in [docs/edge-device-setup.md](docs/edge-device-setup.md):
 
 ```bash
 uv tool install litert-lm
@@ -390,8 +427,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 This is a reference design. What it does not do yet:
 
 - **One control-plane instance.** Live deployment streams are tracked in memory; a second instance would not see devices connected to the first.
-- **Targeting happens once.** A deployment's selector is matched when it is created; a device that joins later does not receive it. There is no desired-state reconciliation, staged rollout, or rollback yet.
-- **No model manifest.** Devices report CPU architecture and OS, but deployments do not yet declare memory, accelerator or runtime requirements, so an unsuitable device fails at load time rather than being skipped.
+- **Reconciliation happens on connect.** A device that joins or changes labels gets its desired deployment when it (re)connects, not while it stays connected.
+- **Rollback needs history.** Devices that never ran an earlier model keep the rolled-back one loaded; there is no "unload" instruction yet.
+- **Agent tools are read-only and fixed.** Three built-in tools; there is no per-device tool permission model or tool plugin system yet.
 - **Telemetry is a probe.** Numbers come from the agent's own short request against the runtime every `PROBE_INTERVAL_SECS`, not from real user traffic.
 - **Some endpoints are open.** `/metrics` and the dashboard's event stream do not require the API key; keep the control plane on a private network.
 
