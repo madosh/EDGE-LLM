@@ -191,6 +191,11 @@ func (h *Handlers) targetMatching(ctx context.Context, d *model.Deployment) *fle
 			h.publishDeployment(device.ID, d)
 		}
 	}
+	// If every matching device was skipped, no device will ever report
+	// progress, so settle the deployment's status now (it becomes failed).
+	if err := h.pg.CheckDeploymentCompletion(ctx, d.ID); err != nil {
+		log.Warn().Err(err).Msg("check deployment completion failed")
+	}
 	return summary
 }
 

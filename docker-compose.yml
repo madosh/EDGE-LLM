@@ -201,7 +201,9 @@ services:
           subpath: server
       - ./artifacts:/artifacts:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health | grep -q ok"]
+      # The image is distroless (no shell, wget or curl): the server binary
+      # checks its own /healthz.
+      test: ["CMD", "/server", "--health-check"]
       interval: 10s
       timeout: 5s
       retries: 10

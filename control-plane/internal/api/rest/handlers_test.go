@@ -353,3 +353,13 @@ func TestRequestBodyIsLimited(t *testing.T) {
 		t.Fatalf("a 2 MiB body should be rejected with 400, got %d", w.Code)
 	}
 }
+
+func TestHealthzNeedsNoKey(t *testing.T) {
+	router := setupTestRouter(t, t.TempDir())
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Fatalf("GET /healthz without a key: %d %q, want 200 \"ok\"", w.Code, w.Body.String())
+	}
+}
