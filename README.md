@@ -48,67 +48,7 @@ flowchart LR
 3. **It sends the job** to each matching device over a secure connection, and each device reports its health back.
 4. **Each device** downloads the model, checks it is exactly the file you published (by its SHA-256 fingerprint), and runs it locally. Answers are generated on the device, with no cloud call.
 
-### Detailed view
-
-```mermaid
-flowchart TB
-    %% ─── Top Layer: Operator ───
-    subgraph OPERATOR["OPERATOR"]
-        UI["Operator Dashboard\n(SvelteKit + Tailwind)"]
-    end
-
-    %% ─── Middle Layer: Control Plane ───
-    subgraph CLOUD["CONTROL PLANE"]
-        API["REST API\nport :8080"]
-        GRPC["gRPC Server\nport :9090 · mTLS"]
-    end
-
-    %% ─── Data Stores ───
-    subgraph STORES["DATA STORES"]
-        PG[("Postgres 16\nDevice state &\ndeployments")]
-        CH[("ClickHouse 23.8\nInference\ntelemetry")]
-        NATS["NATS 2.10\nEvent bus"]
-    end
-
-    %% ─── Bottom Layer: Edge Devices ───
-    subgraph EDGE["EDGE DEVICES (Rust Agents)"]
-        D1["Device 1"]
-        D2["Device 2"]
-        DN["Device N…"]
-    end
-
-    %% ─── Inference Runtimes ───
-    subgraph RUNTIME["INFERENCE BACKENDS"]
-        LR["LiteRT\n(on-device AI)"]
-        OL["Ollama\n(LLM server)"]
-        ST["Stub\n(demo / CI)"]
-    end
-
-    %% ─── Connections ───
-    UI -->|"REST API calls"| API
-    API --> PG
-    API --> CH
-    API --> NATS
-    GRPC --> PG
-    GRPC --> CH
-
-    D1 -->|"gRPC + mTLS"| GRPC
-    D2 -->|"gRPC + mTLS"| GRPC
-    DN -->|"gRPC + mTLS"| GRPC
-
-    D1 -.->|"inference"| LR
-    D1 -.->|"inference"| OL
-    D2 -.->|"inference"| LR
-    D2 -.->|"inference"| OL
-    DN -.->|"inference"| ST
-
-    %% ─── Styling ───
-    style OPERATOR fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
-    style CLOUD fill:#0f172a,stroke:#38bdf8,color:#e0f2fe
-    style STORES fill:#0c1a0c,stroke:#4ade80,color:#dcfce7
-    style EDGE fill:#1c1917,stroke:#f97316,color:#ffedd5
-    style RUNTIME fill:#1a1a2e,stroke:#a78bfa,color:#ede9fe
-```
+The [Architecture](#architecture) section below shows every component and connection.
 
 ---
 
@@ -131,38 +71,61 @@ flowchart TB
 ## Architecture
 
 ```mermaid
-graph TB
-    subgraph browser[Operator Browser]
-        UI[SvelteKit + Tailwind]
+flowchart TB
+    subgraph OPS["Operator"]
+        BROWSER["Browser"]
+        WEB["Web app<br/>adds API key"]
+        CLI["curl · scripts"]
     end
-    subgraph cp[Control Plane - Go 1.23]
-        REST["REST :8080"]
-        GRPC["gRPC :9090 mTLS"]
+    subgraph CP["Control plane · Go"]
+        REST["REST API :8080<br/>deploy · promote<br/>rollback · ask"]
+        FLEET["Targeting<br/>labels · rollout %<br/>requirements"]
+        GRPC["gRPC :9090<br/>mutual TLS<br/>per-device identity"]
+        FILES["Artifact server<br/>model + .sha256"]
     end
-    subgraph stores[Data Stores]
-        PG[(Postgres 16)]
-        CH[(ClickHouse 23.8)]
-        NATS[NATS 2.10]
+    subgraph DATA["State"]
+        PG[("Postgres<br/>devices · deployments<br/>tasks")]
+        CH[("ClickHouse<br/>telemetry")]
+        NATS{{"NATS<br/>events"}}
     end
-    subgraph edge[Edge Devices]
-        D1[device-1 Rust agent]
-        D2[device-2 Rust agent]
-        LR[LiteRT - optional]
-        OL[Ollama - optional]
+    subgraph EDGE["Edge device · one of N"]
+        AGENT["cami-agent · Rust<br/>own certificate"]
+        CACHE[("Verified cache<br/>by SHA-256")]
+        RUNTIME["LiteRT-LM serve<br/>Ollama · stub"]
+        TOOLS["Agent tools<br/>read-only"]
     end
-    UI -->|REST /api| REST
+    BROWSER --> WEB
+    WEB -->|"/api"| REST
+    CLI -->|"API key"| REST
+    REST --> FLEET
+    FLEET -->|"instruction"| GRPC
     REST --> PG
-    REST --> CH
-    REST --> NATS
+    REST <-.->|"events"| NATS
+    REST -.->|"queries"| CH
     GRPC --> PG
-    GRPC --> CH
-    D1 -->|gRPC mTLS| GRPC
-    D2 -->|gRPC mTLS| GRPC
-    D1 -.->|inference| LR
-    D1 -.->|inference| OL
-    D2 -.->|inference| LR
-    D2 -.->|inference| OL
+    GRPC -->|"telemetry"| CH
+    GRPC <-->|"jobs · status · telemetry"| AGENT
+    FILES -->|"model download"| AGENT
+    AGENT -->|"SHA-256 match"| CACHE
+    AGENT -->|"load verified file"| RUNTIME
+    CACHE -.-> RUNTIME
+    AGENT -->|"tool calls"| TOOLS
+    classDef person fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
+    classDef cloud fill:#0f172a,stroke:#38bdf8,color:#e0f2fe
+    classDef store fill:#0c1a0c,stroke:#4ade80,color:#dcfce7
+    classDef edge fill:#1c1917,stroke:#f97316,color:#ffedd5
+    classDef model fill:#1a1a2e,stroke:#a78bfa,color:#ede9fe
+    class BROWSER,WEB,CLI person
+    class REST,FLEET,GRPC,FILES cloud
+    class PG,CH,NATS store
+    class AGENT,CACHE,TOOLS edge
+    class RUNTIME model
 ```
+
+- **Operator.** The web app runs a small server that adds the API key to `/api` calls, so the key never reaches the browser. Scripts call the REST API with the key directly.
+- **Control plane.** REST takes deployments, promotions, rollbacks and questions. Targeting picks the devices by label, rollout percentage and requirements (RAM, accelerator, CPU architecture). gRPC sends each device its instruction over mutual TLS. The device name comes from its certificate, never from the request.
+- **State.** Postgres holds devices, deployments and agent tasks. ClickHouse stores telemetry. NATS carries device and deployment events.
+- **Edge device.** The agent downloads the model, keeps it only if the SHA-256 matches, and loads that exact file into LiteRT-LM, Ollama or the stub. When asked a question, it answers with the local model and can call read-only tools first. Every device repeats this; on connect, each gets the newest deployment that matches it.
 
 ---
 
