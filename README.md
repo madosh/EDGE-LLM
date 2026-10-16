@@ -374,6 +374,12 @@ cd agent && cargo test
 
 # Web
 cd web && npm test
+
+# End-to-end: the whole stack, as a user runs it (also runs in CI)
+cp .env.example .env && docker compose up -d --build
+scripts/e2e.sh        # deploy, telemetry, requirements, rollback, canary,
+                      # ask-a-device, control-plane restart, late-joining device
+docker compose down -v
 ```
 
 ---
