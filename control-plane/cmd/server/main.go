@@ -24,7 +24,7 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--health-check" {
-		os.Exit(0)
+		os.Exit(healthCheck())
 	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -185,6 +185,22 @@ func loadConfig() config {
 		ArtifactsBaseURL: getEnv("ARTIFACTS_BASE_URL", fmt.Sprintf("http://localhost:%s", restPort)),
 		WebhookURL:       getEnv("WEBHOOK_URL", ""),
 	}
+}
+
+// healthCheck asks the running server's /healthz endpoint whether it is up.
+// It is how Docker checks the container: the distroless image has no shell,
+// wget or curl, so the check is this binary calling itself over HTTP.
+func healthCheck() int {
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + getEnv("REST_PORT", "8080") + "/healthz")
+	if err != nil {
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 func getEnv(key, def string) string {

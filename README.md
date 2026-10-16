@@ -48,118 +48,84 @@ flowchart LR
 3. **It sends the job** to each matching device over a secure connection, and each device reports its health back.
 4. **Each device** downloads the model, checks it is exactly the file you published (by its SHA-256 fingerprint), and runs it locally. Answers are generated on the device, with no cloud call.
 
-### Detailed view
-
-```mermaid
-flowchart TB
-    %% ─── Top Layer: Operator ───
-    subgraph OPERATOR["OPERATOR"]
-        UI["Operator Dashboard\n(SvelteKit + Tailwind)"]
-    end
-
-    %% ─── Middle Layer: Control Plane ───
-    subgraph CLOUD["CONTROL PLANE"]
-        API["REST API\nport :8080"]
-        GRPC["gRPC Server\nport :9090 · mTLS"]
-    end
-
-    %% ─── Data Stores ───
-    subgraph STORES["DATA STORES"]
-        PG[("Postgres 16\nDevice state &\ndeployments")]
-        CH[("ClickHouse 23.8\nInference\ntelemetry")]
-        NATS["NATS 2.10\nEvent bus"]
-    end
-
-    %% ─── Bottom Layer: Edge Devices ───
-    subgraph EDGE["EDGE DEVICES (Rust Agents)"]
-        D1["Device 1"]
-        D2["Device 2"]
-        DN["Device N…"]
-    end
-
-    %% ─── Inference Runtimes ───
-    subgraph RUNTIME["INFERENCE BACKENDS"]
-        LR["LiteRT\n(on-device AI)"]
-        OL["Ollama\n(LLM server)"]
-        ST["Stub\n(demo / CI)"]
-    end
-
-    %% ─── Connections ───
-    UI -->|"REST API calls"| API
-    API --> PG
-    API --> CH
-    API --> NATS
-    GRPC --> PG
-    GRPC --> CH
-
-    D1 -->|"gRPC + mTLS"| GRPC
-    D2 -->|"gRPC + mTLS"| GRPC
-    DN -->|"gRPC + mTLS"| GRPC
-
-    D1 -.->|"inference"| LR
-    D1 -.->|"inference"| OL
-    D2 -.->|"inference"| LR
-    D2 -.->|"inference"| OL
-    DN -.->|"inference"| ST
-
-    %% ─── Styling ───
-    style OPERATOR fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
-    style CLOUD fill:#0f172a,stroke:#38bdf8,color:#e0f2fe
-    style STORES fill:#0c1a0c,stroke:#4ade80,color:#dcfce7
-    style EDGE fill:#1c1917,stroke:#f97316,color:#ffedd5
-    style RUNTIME fill:#1a1a2e,stroke:#a78bfa,color:#ede9fe
-```
+The [Architecture](#architecture) section below shows every component and connection.
 
 ---
 
 ## Features
 
-- **Tag-based deployment** — push models to devices matching label selectors (e.g. `location=barcelona`)
+- **Tag-based deployment as desired state** — deploy to a label selector (e.g. `location=barcelona`); a device that joins later, or changes its labels, gets the newest matching deployment when it connects
+- **Staged rollout and rollback** — start with a canary percentage, promote to 100%, or roll back so every device returns to the model it ran before (usually still in its verified cache, so no download)
+- **Model requirements** — a deployment can require RAM, an accelerator or a CPU architecture; devices that don't qualify are skipped with the reason instead of failing at load time
+- **Ask a device** — an AI agent on the device answers questions with the model it runs, calling read-only local tools (status, cached models) through LiteRT-LM function calling
 - **Verified artifacts, verified execution** — the agent streams each artifact to disk while hashing it, keeps it only if the SHA-256 matches, and the runtime loads *that exact file*
 - **Per-device mTLS identity** — gRPC over TLS 1.3; each device has its own certificate, and the control plane checks every request against the certificate's name
 - **Real on-device inference** — Google [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) (`litert-lm serve`), Ollama, or a stub for demos and CI
 - **Honest telemetry** — time to first token from the first streamed token, decode speed from real token counts; a failing runtime shows as `error`, not as made-up numbers
 - **Offline detection** — heartbeat watchdog marks devices offline after 30s
 - **Event bus** — NATS for device and deployment events
-- **Operator UI** — SvelteKit dashboard with fleet overview, deploy form, and device detail
+- **Operator UI** — SvelteKit dashboard with fleet overview, deploy form (rollout and requirements), promote/rollback, and device detail with the agent chat
 
 ---
 
 ## Architecture
 
 ```mermaid
-graph TB
-    subgraph browser[Operator Browser]
-        UI[SvelteKit + Tailwind]
+flowchart TB
+    subgraph OPS["Operator"]
+        BROWSER["Browser"]
+        WEB["Web app<br/>adds API key"]
+        CLI["curl · scripts"]
     end
-    subgraph cp[Control Plane - Go 1.23]
-        REST["REST :8080"]
-        GRPC["gRPC :9090 mTLS"]
+    subgraph CP["Control plane · Go"]
+        REST["REST API :8080<br/>deploy · promote<br/>rollback · ask"]
+        FLEET["Targeting<br/>labels · rollout %<br/>requirements"]
+        GRPC["gRPC :9090<br/>mutual TLS<br/>per-device identity"]
+        FILES["Artifact server<br/>model + .sha256"]
     end
-    subgraph stores[Data Stores]
-        PG[(Postgres 16)]
-        CH[(ClickHouse 23.8)]
-        NATS[NATS 2.10]
+    subgraph DATA["State"]
+        PG[("Postgres<br/>devices · deployments<br/>tasks")]
+        CH[("ClickHouse<br/>telemetry")]
+        NATS{{"NATS<br/>events"}}
     end
-    subgraph edge[Edge Devices]
-        D1[device-1 Rust agent]
-        D2[device-2 Rust agent]
-        LR[LiteRT - optional]
-        OL[Ollama - optional]
+    subgraph EDGE["Edge device · one of N"]
+        AGENT["cami-agent · Rust<br/>own certificate"]
+        CACHE[("Verified cache<br/>by SHA-256")]
+        RUNTIME["LiteRT-LM serve<br/>Ollama · stub"]
+        TOOLS["Agent tools<br/>read-only"]
     end
-    UI -->|REST /api| REST
+    BROWSER --> WEB
+    WEB -->|"/api"| REST
+    CLI -->|"API key"| REST
+    REST --> FLEET
+    FLEET -->|"instruction"| GRPC
     REST --> PG
-    REST --> CH
-    REST --> NATS
+    REST <-.->|"events"| NATS
+    REST -.->|"queries"| CH
     GRPC --> PG
-    GRPC --> CH
-    D1 -->|gRPC mTLS| GRPC
-    D2 -->|gRPC mTLS| GRPC
-    D1 -.->|inference| LR
-    D1 -.->|inference| OL
-    D2 -.->|inference| LR
-    D2 -.->|inference| OL
+    GRPC -->|"telemetry"| CH
+    GRPC <-->|"jobs · status · telemetry"| AGENT
+    FILES -->|"model download"| AGENT
+    AGENT -->|"SHA-256 match"| CACHE
+    AGENT -->|"load verified file"| RUNTIME
+    CACHE -.-> RUNTIME
+    AGENT -->|"tool calls"| TOOLS
+    classDef person fill:#1e1b4b,stroke:#6366f1,color:#e0e7ff
+    classDef cloud fill:#0f172a,stroke:#38bdf8,color:#e0f2fe
+    classDef store fill:#0c1a0c,stroke:#4ade80,color:#dcfce7
+    classDef edge fill:#1c1917,stroke:#f97316,color:#ffedd5
+    classDef model fill:#1a1a2e,stroke:#a78bfa,color:#ede9fe
+    class BROWSER,WEB,CLI person
+    class REST,FLEET,GRPC,FILES cloud
+    class PG,CH,NATS store
+    class AGENT,CACHE,TOOLS edge
+    class RUNTIME model
 ```
+
+- **Operator.** The web app runs a small server that adds the API key to `/api` calls, so the key never reaches the browser. Scripts call the REST API with the key directly.
+- **Control plane.** REST takes deployments, promotions, rollbacks and questions. Targeting picks the devices by label, rollout percentage and requirements (RAM, accelerator, CPU architecture). gRPC sends each device its instruction over mutual TLS. The device name comes from its certificate, never from the request.
+- **State.** Postgres holds devices, deployments and agent tasks. ClickHouse stores telemetry. NATS carries device and deployment events.
+- **Edge device.** The agent downloads the model, keeps it only if the SHA-256 matches, and loads that exact file into LiteRT-LM, Ollama or the stub. When asked a question, it answers with the local model and can call read-only tools first. Every device repeats this; on connect, each gets the newest deployment that matches it.
 
 ---
 
@@ -194,6 +160,40 @@ curl -s -X POST http://localhost:8080/api/deployments \
 
 Each device cycles through `pending → downloading → verifying → running` within seconds. The sample artifact is a placeholder file, so only the stub backend can "run" it; a real runtime rejects it.
 
+An empty `tag_selector` targets every device and must be confirmed with `"all_devices": true`.
+
+### Canary, promote, roll back
+
+```bash
+# 1. Send a new model to 10% of matching devices, only those with 4 GB+ RAM.
+curl -s -X POST http://localhost:8080/api/deployments -H "X-Api-Key: changeme" \
+  -H "Content-Type: application/json" -d "{
+    \"model_id\": \"gemma-4-e2b\", \"artifact_url\": \"...\", \"artifact_sha256\": \"$SHA\",
+    \"tag_selector\": {\"location\": \"barcelona\"},
+    \"rollout_percent\": 10,
+    \"requirements\": {\"min_mem_mb\": 4096}
+  }" | jq .targeting      # → which devices got it, which were skipped and why
+
+# 2. Looks good: promote to everyone.
+curl -s -X POST http://localhost:8080/api/deployments/$ID/promote -H "X-Api-Key: changeme" \
+  -d '{"rollout_percent": 100}'
+
+# 3. Or not: roll back. Devices return to the model they ran before.
+curl -s -X POST http://localhost:8080/api/deployments/$ID/rollback -H "X-Api-Key: changeme"
+```
+
+The rollout is deterministic per device: raising the percentage only ever adds devices.
+
+### Ask a device
+
+```bash
+curl -s -X POST http://localhost:8080/api/devices/$DEVICE_ID/tasks -H "X-Api-Key: changeme" \
+  -d '{"prompt": "How much free memory do you have, and which model are you running?"}'
+curl -s http://localhost:8080/api/devices/$DEVICE_ID/tasks -H "X-Api-Key: changeme" | jq '.[0]'
+```
+
+The agent on the device answers with its loaded model. It may call three read-only tools first (`device_status`, `list_cached_models`, `current_model`); each call and its result is stored with the answer. On the stub backend the "agent" just reports the device status, labelled as such.
+
 ---
 
 ## Inference Backends
@@ -216,7 +216,7 @@ Every artifact is stored under its SHA-256 in `MODEL_CACHE_DIR`. A cached file i
 2. Ask `litert-lm serve` to load `"<absolute path>,<accelerator>"` — the server accepts a file path as the model, so the verified bytes are what runs.
 3. Every `PROBE_INTERVAL_SECS`, stream a short completion: time to first token is when the first token arrives; decode speed comes from the server's `usage.completion_tokens`.
 
-**On a real device** (e.g. Raspberry Pi 5):
+**On a real device** (e.g. Raspberry Pi 5) — full walkthrough with systemd services and a benchmark script in [docs/edge-device-setup.md](docs/edge-device-setup.md):
 
 ```bash
 uv tool install litert-lm
@@ -337,6 +337,12 @@ cd agent && cargo test
 
 # Web
 cd web && npm test
+
+# End-to-end: the whole stack, as a user runs it (also runs in CI)
+cp .env.example .env && docker compose up -d --build
+scripts/e2e.sh        # deploy, telemetry, requirements, rollback, canary,
+                      # ask-a-device, control-plane restart, late-joining device
+docker compose down -v
 ```
 
 ---
@@ -390,8 +396,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 This is a reference design. What it does not do yet:
 
 - **One control-plane instance.** Live deployment streams are tracked in memory; a second instance would not see devices connected to the first.
-- **Targeting happens once.** A deployment's selector is matched when it is created; a device that joins later does not receive it. There is no desired-state reconciliation, staged rollout, or rollback yet.
-- **No model manifest.** Devices report CPU architecture and OS, but deployments do not yet declare memory, accelerator or runtime requirements, so an unsuitable device fails at load time rather than being skipped.
+- **Reconciliation happens on connect.** A device that joins or changes labels gets its desired deployment when it (re)connects, not while it stays connected.
+- **Rollback needs history.** Devices that never ran an earlier model keep the rolled-back one loaded; there is no "unload" instruction yet.
+- **Agent tools are read-only and fixed.** Three built-in tools; there is no per-device tool permission model or tool plugin system yet.
 - **Telemetry is a probe.** Numbers come from the agent's own short request against the runtime every `PROBE_INTERVAL_SECS`, not from real user traffic.
 - **Some endpoints are open.** `/metrics` and the dashboard's event stream do not require the API key; keep the control plane on a private network.
 

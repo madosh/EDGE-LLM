@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
-	import { api, type Device, type TelemetryPoint } from '$lib/api';
+	import { api, type AgentTask, type Device, type TelemetryPoint } from '$lib/api';
 
 	let device: Device | null = null;
 	let telemetry: TelemetryPoint[] = [];
+	let tasks: AgentTask[] = [];
+	let prompt = '';
+	let asking = false;
+	let askError = '';
 	let error = '';
 	let interval: ReturnType<typeof setInterval>;
 
@@ -15,7 +19,11 @@
 	async function load() {
 		if (!id) return;
 		try {
-			[device, telemetry] = await Promise.all([api.device(id), api.deviceTelemetry(id, 30)]);
+			[device, telemetry, tasks] = await Promise.all([
+				api.device(id),
+				api.deviceTelemetry(id, 30),
+				api.deviceTasks(id)
+			]);
 			error = '';
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : String(e);
@@ -46,6 +54,28 @@
 	}
 
 	$: latest = telemetry[0];
+
+	async function ask() {
+		if (!id || !prompt.trim()) return;
+		asking = true;
+		askError = '';
+		try {
+			const task = await api.askDevice(id, prompt.trim());
+			tasks = [task, ...tasks];
+			prompt = '';
+		} catch (e: unknown) {
+			askError = e instanceof Error ? e.message : String(e);
+		} finally {
+			asking = false;
+		}
+	}
+
+	function hardware(d: Device): string {
+		const parts = [d.arch || 'unknown arch'];
+		if (d.mem_total_mb) parts.push(`${(d.mem_total_mb / 1024).toFixed(1)} GB RAM`);
+		if (d.accelerators?.length) parts.push(d.accelerators.join(', '));
+		return parts.join(' · ');
+	}
 
 	const metrics: { label: string; key: MetricKey; unit: string; color: string }[] = [
 		{ label: 'Tokens / sec', key: 'tps', unit: 'tok/s', color: '#a78bfa' },
@@ -90,6 +120,10 @@
 					<div class="text-sm font-mono text-gray-200 mt-1 truncate">{value}</div>
 				</div>
 			{/each}
+			<div class="card">
+				<div class="text-xs text-gray-500">Hardware</div>
+				<div class="text-sm font-mono text-gray-200 mt-1 truncate" title={hardware(device)}>{hardware(device)}</div>
+			</div>
 			<div class="card">
 				<div class="text-xs text-gray-500">Labels</div>
 				<div class="flex flex-wrap gap-1 mt-1">
@@ -160,6 +194,71 @@
 					</table>
 				</div>
 			{/if}
+		</div>
+
+		<!-- On-device AI agent -->
+		<div>
+			<h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-1">Ask this device</h2>
+			<p class="text-xs text-gray-500 mb-3">
+				Answered on the device by the model it is running. The agent can look up the device's status,
+				cached models and current model through read-only tools; every tool call is shown below.
+			</p>
+			<form class="flex gap-2" on:submit|preventDefault={ask}>
+				<input
+					type="text"
+					bind:value={prompt}
+					maxlength="4000"
+					placeholder="e.g. How much free memory do you have, and which model are you running?"
+					class="flex-1 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+				/>
+				<button class="btn-primary" type="submit" disabled={asking || !prompt.trim()}>
+					{asking ? 'Sending…' : 'Ask'}
+				</button>
+			</form>
+			{#if askError}
+				<div class="text-red-400 text-sm mt-2">{askError}</div>
+			{/if}
+
+			<div class="space-y-3 mt-4">
+				{#each tasks as t (t.id)}
+					<div class="card space-y-2">
+						<div class="flex items-start justify-between gap-4">
+							<div class="text-sm text-gray-200">{t.prompt}</div>
+							<span
+								class="text-xs font-medium uppercase tracking-wide {t.status === 'done'
+									? 'text-emerald-400'
+									: t.status === 'failed'
+										? 'text-red-400'
+										: 'text-yellow-400'}"
+							>
+								{t.status === 'pending' ? 'waiting for device' : t.status}
+							</span>
+						</div>
+						{#if t.answer}
+							<div class="text-sm text-gray-300 whitespace-pre-wrap">{t.answer}</div>
+						{/if}
+						{#if t.error_msg}
+							<div class="text-xs text-red-400">{t.error_msg}</div>
+						{/if}
+						{#if t.steps?.length}
+							<details class="text-xs text-gray-500">
+								<summary class="cursor-pointer">{t.steps.length} tool call(s)</summary>
+								{#each t.steps as step}
+									<div class="mt-2">
+										<span class="font-mono text-violet-300">{step.tool}()</span>
+										<pre class="mt-1 bg-gray-900 rounded p-2 overflow-x-auto text-gray-400">{step.result}</pre>
+									</div>
+								{/each}
+							</details>
+						{/if}
+						{#if t.model_id || t.duration_ms}
+							<div class="text-xs text-gray-600 font-mono">
+								{t.model_id ?? ''}{t.duration_ms ? ` · ${(t.duration_ms / 1000).toFixed(1)} s` : ''}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>

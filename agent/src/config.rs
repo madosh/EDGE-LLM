@@ -50,6 +50,12 @@ pub struct Config {
     #[arg(long, env = "MODEL_CACHE_DIR", default_value = "/var/lib/cami/models")]
     pub model_cache_dir: String,
 
+    /// Accelerators to report to the control plane ("cpu,gpu"), matched
+    /// against deployment requirements. Empty: "cpu", plus LITERT_ACCELERATOR
+    /// when the LiteRT backend uses a GPU or NPU.
+    #[arg(long, env = "DEVICE_ACCELERATORS", default_value = "")]
+    pub device_accelerators: String,
+
     /// Seconds between telemetry probes. Each probe runs a short real
     /// generation, so it costs device compute; keep it well above a few seconds.
     #[arg(long, env = "PROBE_INTERVAL_SECS", default_value_t = 30)]
@@ -98,6 +104,28 @@ impl Config {
         }
     }
 
+    /// The accelerators this device reports, lowercased and de-duplicated.
+    pub fn accelerators(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut add = |a: &str| {
+            let a = a.trim().to_lowercase();
+            if matches!(a.as_str(), "cpu" | "gpu" | "npu") && !out.contains(&a) {
+                out.push(a);
+            }
+        };
+        if self.device_accelerators.trim().is_empty() {
+            add("cpu");
+            if self.resolve_backend().name() == "litert" {
+                add(&self.accelerator());
+            }
+        } else {
+            for a in self.device_accelerators.split(',') {
+                add(a);
+            }
+        }
+        out
+    }
+
     /// The configured LiteRT-LM accelerator; anything unrecognised falls back
     /// to "cpu", which every LiteRT-LM build supports.
     pub fn accelerator(&self) -> String {
@@ -132,6 +160,7 @@ mod tests {
             litert_url: "".into(),
             litert_accelerator: "cpu".into(),
             model_cache_dir: "/var/lib/cami/models".into(),
+            device_accelerators: "".into(),
             probe_interval_secs: 30,
         }
     }
@@ -229,6 +258,19 @@ mod tests {
                 accelerator: "gpu".into()
             }
         );
+    }
+
+    #[test]
+    fn test_reported_accelerators() {
+        let mut cfg = base_cfg();
+        assert_eq!(cfg.accelerators(), vec!["cpu"]);
+
+        cfg.runtime_backend = "litert".into();
+        cfg.litert_accelerator = "gpu".into();
+        assert_eq!(cfg.accelerators(), vec!["cpu", "gpu"]);
+
+        cfg.device_accelerators = " NPU, cpu, npu, tpu ".into();
+        assert_eq!(cfg.accelerators(), vec!["npu", "cpu"]);
     }
 
     #[test]

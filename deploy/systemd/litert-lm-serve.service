@@ -1,0 +1,23 @@
+# LiteRT-LM's OpenAI-compatible server, listening on localhost only.
+# The Cami agent on the same device sends it the absolute path of each
+# verified .litertlm file, so it needs read access to the agent's model cache.
+#
+# Install: see docs/edge-device-setup.md
+[Unit]
+Description=LiteRT-LM inference server (litert-lm serve)
+After=network.target
+
+[Service]
+User=cami
+Group=cami
+# `uv tool install litert-lm` puts the command in the user's ~/.local/bin.
+ExecStart=/home/cami/.local/bin/litert-lm serve --host 127.0.0.1 --port 9379
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+# /usr, /boot and /etc read-only. Home stays writable: LiteRT-LM keeps its
+# own state there, and may write accelerator caches next to the model file.
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

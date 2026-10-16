@@ -126,3 +126,29 @@ jobs:
 
       - name: Build web
         run: docker build -f web/Dockerfile -t cami-fleet/web:ci ./web
+
+  # ── End-to-end: the whole stack, as a user runs it ────────────────────────
+  e2e:
+    name: End-to-end (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        run: |
+          cp .env.example .env
+          docker compose up -d --build
+
+      - name: Run the end-to-end scenario
+        run: scripts/e2e.sh
+
+      - name: Container state and logs on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=150
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans

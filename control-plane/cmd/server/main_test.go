@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -29,5 +31,34 @@ func TestRedactDSNRefusesUnparseable(t *testing.T) {
 	got := redactDSN("host=db user=fleet password=S3cr3t dbname=fleet")
 	if strings.Contains(got, "S3cr3t") {
 		t.Fatalf("unparseable DSN leaked: %q", got)
+	}
+}
+
+func TestHealthCheckProbesHealthz(t *testing.T) {
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer healthy.Close()
+	t.Setenv("REST_PORT", healthy.URL[strings.LastIndex(healthy.URL, ":")+1:])
+	if code := healthCheck(); code != 0 {
+		t.Fatalf("healthy server: exit code %d, want 0", code)
+	}
+
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer broken.Close()
+	t.Setenv("REST_PORT", broken.URL[strings.LastIndex(broken.URL, ":")+1:])
+	if code := healthCheck(); code != 1 {
+		t.Fatalf("failing server: exit code %d, want 1", code)
+	}
+
+	t.Setenv("REST_PORT", "1") // nothing listens on port 1
+	if code := healthCheck(); code != 1 {
+		t.Fatalf("no server: exit code %d, want 1", code)
 	}
 }

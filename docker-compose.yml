@@ -23,7 +23,9 @@ services:
       CERT_DIR: /certs
       CA_DIR: /ca
       # One certificate per device; its common name is the device name.
-      DEVICE_NAMES: "device-barcelona-1 device-barcelona-2 device-edge-litert device-edge-ollama"
+      DEVICE_NAMES: "device-barcelona-1 device-barcelona-2 device-edge-litert device-edge-ollama ${EXTRA_DEVICE_NAMES:-}"
+      # Names physical devices use to reach this host, e.g. "IP:192.168.1.20".
+      SERVER_SANS: "${SERVER_SANS:-}"
     volumes:
       - certs:/certs
       - ca-private:/ca
@@ -199,7 +201,9 @@ services:
           subpath: server
       - ./artifacts:/artifacts:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health | grep -q ok"]
+      # The image is distroless (no shell, wget or curl): the server binary
+      # checks its own /healthz.
+      test: ["CMD", "/server", "--health-check"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -91,3 +91,38 @@ func TestAckRejectsStatusNotReportableByDevice(t *testing.T) {
 	})
 	wantCode(t, err, codes.InvalidArgument)
 }
+
+func TestReportTaskRejectsAnotherDevicesID(t *testing.T) {
+	srv := NewServer(nil, nil, nil)
+	srv.deviceNames.Store("id-of-device-1", "device-barcelona-1")
+
+	_, err := srv.ReportTask(asDevice("device-barcelona-2"), &pb.TaskResult{
+		TaskId: "task-1", DeviceId: "id-of-device-1", Status: "done", Answer: "forged",
+	})
+	wantCode(t, err, codes.PermissionDenied)
+}
+
+func TestReportTaskRejectsUnknownStatus(t *testing.T) {
+	srv := NewServer(nil, nil, nil)
+	srv.deviceNames.Store("id-of-device-1", "device-barcelona-1")
+
+	_, err := srv.ReportTask(asDevice("device-barcelona-1"), &pb.TaskResult{
+		TaskId: "task-1", DeviceId: "id-of-device-1", Status: "pending",
+	})
+	wantCode(t, err, codes.InvalidArgument)
+}
+
+func TestPushTaskReportsDelivery(t *testing.T) {
+	srv := NewServer(nil, nil, nil)
+	if srv.PushTask("nobody-listening", &pb.AgentTask{TaskId: "t"}) {
+		t.Fatal("PushTask must report false when the device has no open stream")
+	}
+	ch := make(chan *pb.AgentTask, 1)
+	srv.taskChs["dev"] = append(srv.taskChs["dev"], ch)
+	if !srv.PushTask("dev", &pb.AgentTask{TaskId: "t"}) {
+		t.Fatal("PushTask must report true when a stream took the task")
+	}
+	if got := <-ch; got.TaskId != "t" {
+		t.Fatalf("got task %q", got.TaskId)
+	}
+}
