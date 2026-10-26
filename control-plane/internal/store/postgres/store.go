@@ -83,6 +83,33 @@ func (s *Store) migrate(ctx context.Context) error {
 			ON device_deployments (device_id, status);
 		CREATE INDEX IF NOT EXISTS idx_devices_labels
 			ON devices USING GIN (labels jsonb_path_ops);
+
+		-- Hardware a device reports, matched against a deployment's requirements.
+		ALTER TABLE devices ADD COLUMN IF NOT EXISTS mem_total_mb BIGINT NOT NULL DEFAULT 0;
+		ALTER TABLE devices ADD COLUMN IF NOT EXISTS accelerators JSONB  NOT NULL DEFAULT '[]';
+
+		-- Staged rollout and per-model requirements.
+		ALTER TABLE deployments ADD COLUMN IF NOT EXISTS rollout_percent INT   NOT NULL DEFAULT 100;
+		ALTER TABLE deployments ADD COLUMN IF NOT EXISTS requirements    JSONB NOT NULL DEFAULT '{}';
+		CREATE INDEX IF NOT EXISTS idx_deployments_selector
+			ON deployments USING GIN (tag_selector jsonb_path_ops);
+
+		-- Questions answered by the AI agent on a device, with its tool calls.
+		CREATE TABLE IF NOT EXISTS agent_tasks (
+			id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			device_id    UUID        NOT NULL REFERENCES devices(id),
+			prompt       TEXT        NOT NULL,
+			max_steps    INT         NOT NULL DEFAULT 4,
+			status       TEXT        NOT NULL DEFAULT 'pending',
+			answer       TEXT,
+			error_msg    TEXT,
+			steps        JSONB       NOT NULL DEFAULT '[]',
+			model_id     TEXT,
+			duration_ms  INT,
+			created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			completed_at TIMESTAMPTZ
+		);
+		CREATE INDEX IF NOT EXISTS idx_agent_tasks_device ON agent_tasks (device_id, created_at DESC);
 	`)
 	return err
 }
@@ -139,7 +166,7 @@ func (s *Store) MarkStaleDevicesOffline(ctx context.Context, threshold time.Dura
 
 func (s *Store) ListDevices(ctx context.Context) ([]model.Device, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, created_at
+		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, mem_total_mb, accelerators, created_at
 		FROM devices ORDER BY created_at
 	`)
 	if err != nil {
@@ -151,7 +178,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]model.Device, error) {
 
 func (s *Store) GetDevice(ctx context.Context, id string) (*model.Device, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, created_at
+		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, mem_total_mb, accelerators, created_at
 		FROM devices WHERE id = $1
 	`, id)
 	if err != nil {
@@ -174,7 +201,7 @@ func (s *Store) FindDevicesByLabels(ctx context.Context, selector map[string]str
 		return nil, fmt.Errorf("marshal selector: %w", err)
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, created_at
+		SELECT id, name, labels, status, last_seen_at, current_model_id, agent_version, arch, os, mem_total_mb, accelerators, created_at
 		FROM devices WHERE labels @> $1
 	`, selectorJSON)
 	if err != nil {
@@ -189,9 +216,19 @@ func (s *Store) UpdateDeviceModel(ctx context.Context, deviceID, modelID string)
 	return err
 }
 
-// UpdateDevicePlatform records the CPU architecture and OS a device reported.
-func (s *Store) UpdateDevicePlatform(ctx context.Context, deviceID, arch, os string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE devices SET arch = $2, os = $3 WHERE id = $1`, deviceID, arch, os)
+// UpdateDeviceCapabilities records the hardware a device reported at
+// registration: CPU architecture, OS, total RAM and accelerators.
+func (s *Store) UpdateDeviceCapabilities(ctx context.Context, deviceID, arch, os string, memTotalMB int64, accelerators []string) error {
+	if accelerators == nil {
+		accelerators = []string{}
+	}
+	accelJSON, err := json.Marshal(accelerators)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		UPDATE devices SET arch = $2, os = $3, mem_total_mb = $4, accelerators = $5 WHERE id = $1
+	`, deviceID, arch, os, memTotalMB, accelJSON)
 	return err
 }
 
@@ -246,13 +283,17 @@ func scanDevices(rows pgx.Rows) ([]model.Device, error) {
 	var devices []model.Device
 	for rows.Next() {
 		var d model.Device
-		var labelsJSON []byte
+		var labelsJSON, accelJSON []byte
 		if err := rows.Scan(&d.ID, &d.Name, &labelsJSON, &d.Status,
-			&d.LastSeenAt, &d.CurrentModelID, &d.AgentVersion, &d.Arch, &d.OS, &d.CreatedAt); err != nil {
+			&d.LastSeenAt, &d.CurrentModelID, &d.AgentVersion, &d.Arch, &d.OS,
+			&d.MemTotalMB, &accelJSON, &d.CreatedAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(labelsJSON, &d.Labels); err != nil {
 			d.Labels = map[string]string{}
+		}
+		if err := json.Unmarshal(accelJSON, &d.Accelerators); err != nil || d.Accelerators == nil {
+			d.Accelerators = []string{}
 		}
 		devices = append(devices, d)
 	}
@@ -261,27 +302,71 @@ func scanDevices(rows pgx.Rows) ([]model.Device, error) {
 
 // ── Deployment operations ──────────────────────────────────────────────────────
 
+// deploymentCols is the column list every deployment query selects, in the
+// order scanDeployment reads them.
+const deploymentCols = "id, model_id, artifact_url, artifact_sha256, tag_selector, rollout_percent, requirements, status, created_at, completed_at"
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanDeployment(row rowScanner) (*model.Deployment, error) {
+	var d model.Deployment
+	var tagJSON, reqJSON []byte
+	if err := row.Scan(&d.ID, &d.ModelID, &d.ArtifactURL, &d.ArtifactSHA256,
+		&tagJSON, &d.RolloutPercent, &reqJSON, &d.Status, &d.CreatedAt, &d.CompletedAt); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(tagJSON, &d.TagSelector); err != nil || d.TagSelector == nil {
+		d.TagSelector = map[string]string{}
+	}
+	if err := json.Unmarshal(reqJSON, &d.Requirements); err != nil {
+		d.Requirements = model.Requirements{}
+	}
+	return &d, nil
+}
+
+// DeploymentSpec is what an operator asks for when creating a deployment.
+type DeploymentSpec struct {
+	ModelID        string
+	ArtifactURL    string
+	ArtifactSHA256 string
+	TagSelector    map[string]string
+	RolloutPercent int // 1–100; 0 means 100
+	Requirements   model.Requirements
+}
+
+// CreateDeployment creates a deployment for every matching device, with no
+// requirements. See CreateDeploymentSpec for staged rollouts.
 func (s *Store) CreateDeployment(ctx context.Context, modelID, artifactURL, artifactSHA256 string, tagSelector map[string]string) (*model.Deployment, error) {
-	tagJSON, err := json.Marshal(tagSelector)
+	return s.CreateDeploymentSpec(ctx, DeploymentSpec{
+		ModelID:        modelID,
+		ArtifactURL:    artifactURL,
+		ArtifactSHA256: artifactSHA256,
+		TagSelector:    tagSelector,
+	})
+}
+
+func (s *Store) CreateDeploymentSpec(ctx context.Context, spec DeploymentSpec) (*model.Deployment, error) {
+	if spec.TagSelector == nil {
+		spec.TagSelector = map[string]string{}
+	}
+	if spec.RolloutPercent <= 0 {
+		spec.RolloutPercent = 100
+	}
+	tagJSON, err := json.Marshal(spec.TagSelector)
 	if err != nil {
 		return nil, fmt.Errorf("marshal tag_selector: %w", err)
 	}
-	var d model.Deployment
-	err = s.pool.QueryRow(ctx, `
-		INSERT INTO deployments (model_id, artifact_url, artifact_sha256, tag_selector)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, model_id, artifact_url, artifact_sha256, tag_selector, status, created_at, completed_at
-	`, modelID, artifactURL, artifactSHA256, tagJSON).Scan(
-		&d.ID, &d.ModelID, &d.ArtifactURL, &d.ArtifactSHA256,
-		&tagJSON, &d.Status, &d.CreatedAt, &d.CompletedAt,
-	)
+	reqJSON, err := json.Marshal(spec.Requirements)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal requirements: %w", err)
 	}
-	if err := json.Unmarshal(tagJSON, &d.TagSelector); err != nil {
-		d.TagSelector = map[string]string{}
-	}
-	return &d, nil
+	return scanDeployment(s.pool.QueryRow(ctx, `
+		INSERT INTO deployments (model_id, artifact_url, artifact_sha256, tag_selector, rollout_percent, requirements)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING `+deploymentCols,
+		spec.ModelID, spec.ArtifactURL, spec.ArtifactSHA256, tagJSON, spec.RolloutPercent, reqJSON))
 }
 
 func (s *Store) CreateDeviceDeployment(ctx context.Context, deploymentID, deviceID string) error {
@@ -341,10 +426,7 @@ func (s *Store) UpdateDeviceDeploymentStatus(ctx context.Context, deploymentID, 
 }
 
 func (s *Store) ListDeployments(ctx context.Context) ([]model.Deployment, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, model_id, artifact_url, artifact_sha256, tag_selector, status, created_at, completed_at
-		FROM deployments ORDER BY created_at DESC
-	`)
+	rows, err := s.pool.Query(ctx, `SELECT `+deploymentCols+` FROM deployments ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -352,16 +434,11 @@ func (s *Store) ListDeployments(ctx context.Context) ([]model.Deployment, error)
 
 	var deployments []model.Deployment
 	for rows.Next() {
-		var d model.Deployment
-		var tagJSON []byte
-		if err := rows.Scan(&d.ID, &d.ModelID, &d.ArtifactURL, &d.ArtifactSHA256,
-			&tagJSON, &d.Status, &d.CreatedAt, &d.CompletedAt); err != nil {
+		d, err := scanDeployment(rows)
+		if err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal(tagJSON, &d.TagSelector); err != nil {
-			d.TagSelector = map[string]string{}
-		}
-		deployments = append(deployments, d)
+		deployments = append(deployments, *d)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -378,20 +455,7 @@ func (s *Store) ListDeployments(ctx context.Context) ([]model.Deployment, error)
 }
 
 func (s *Store) GetDeployment(ctx context.Context, id string) (*model.Deployment, error) {
-	var d model.Deployment
-	var tagJSON []byte
-	err := s.pool.QueryRow(ctx, `
-		SELECT id, model_id, artifact_url, artifact_sha256, tag_selector, status, created_at, completed_at
-		FROM deployments WHERE id = $1
-	`, id).Scan(&d.ID, &d.ModelID, &d.ArtifactURL, &d.ArtifactSHA256,
-		&tagJSON, &d.Status, &d.CreatedAt, &d.CompletedAt)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(tagJSON, &d.TagSelector); err != nil {
-		d.TagSelector = map[string]string{}
-	}
-	return &d, nil
+	return scanDeployment(s.pool.QueryRow(ctx, `SELECT `+deploymentCols+` FROM deployments WHERE id = $1`, id))
 }
 
 func (s *Store) listDeviceDeployments(ctx context.Context, deploymentID string) ([]model.DeviceDeployment, error) {
@@ -417,28 +481,31 @@ func (s *Store) listDeviceDeployments(ctx context.Context, deploymentID string) 
 	return items, rows.Err()
 }
 
-// CheckDeploymentCompletion marks the deployment as completed/failed/partial_failure
-// when all device_deployments have reached a terminal state.
+// CheckDeploymentCompletion marks the deployment completed, failed or
+// partial_failure once every device it applies to has finished. Devices that
+// were skipped (requirements not met) or rolled back do not count; a
+// deployment every device skipped is failed. A rolled-back deployment keeps
+// that status.
 func (s *Store) CheckDeploymentCompletion(ctx context.Context, deploymentID string) error {
-	var total, running, failed int
+	var total, active, running, failed int
 	err := s.pool.QueryRow(ctx, `
 		SELECT
 			COUNT(*),
+			COUNT(*) FILTER (WHERE status NOT IN ('skipped', 'rolled_back')),
 			COUNT(*) FILTER (WHERE status = 'running'),
 			COUNT(*) FILTER (WHERE status = 'failed')
 		FROM device_deployments WHERE deployment_id = $1
-	`, deploymentID).Scan(&total, &running, &failed)
+	`, deploymentID).Scan(&total, &active, &running, &failed)
 	if err != nil {
 		return err
 	}
-	if total == 0 {
-		return nil
-	}
-	if running+failed < total {
+	if total == 0 || (active > 0 && running+failed < active) {
 		return nil
 	}
 	var newStatus string
 	switch {
+	case active == 0:
+		newStatus = "failed" // every targeted device was skipped
 	case failed == 0:
 		newStatus = "completed"
 	case running == 0:
@@ -448,7 +515,7 @@ func (s *Store) CheckDeploymentCompletion(ctx context.Context, deploymentID stri
 	}
 	_, err = s.pool.Exec(ctx, `
 		UPDATE deployments SET status = $2, completed_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND status <> 'rolled_back'
 	`, deploymentID, newStatus)
 	return err
 }

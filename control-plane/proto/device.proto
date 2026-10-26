@@ -20,6 +20,12 @@ service AgentService {
 
   // Unary: device reports its progress on a specific deployment.
   rpc AckDeployment(DeploymentAck) returns (Empty);
+
+  // Server-side streaming: questions for the AI agent running on the device.
+  rpc WatchTasks(WatchRequest) returns (stream AgentTask);
+
+  // Unary: device reports the agent's answer (or failure) for a task.
+  rpc ReportTask(TaskResult) returns (Empty);
 }
 
 message Empty {}
@@ -30,6 +36,9 @@ message RegisterRequest {
   string              agent_version = 3;
   string              arch          = 4;
   string              os            = 5;
+  // Hardware, matched against a deployment's requirements.
+  uint64              mem_total_mb  = 6;
+  repeated string     accelerators  = 7; // "cpu", "gpu", "npu"
 }
 
 message RegisterResponse {
@@ -78,4 +87,23 @@ message DeploymentAck {
   // "downloading" | "verifying" | "running" | "failed"
   string status        = 3;
   string error_msg     = 4;
+}
+
+// A question for the device's AI agent. The agent may call read-only local
+// tools (device status, cached models) before answering.
+message AgentTask {
+  string task_id   = 1;
+  string prompt    = 2;
+  uint32 max_steps = 3; // model calls allowed, including the final answer
+}
+
+message TaskResult {
+  string task_id     = 1;
+  string device_id   = 2;
+  string status      = 3; // "done" | "failed"
+  string answer      = 4;
+  string error_msg   = 5;
+  string steps_json  = 6; // JSON array of {tool, arguments, result}
+  string model_id    = 7;
+  uint32 duration_ms = 8;
 }

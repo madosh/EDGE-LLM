@@ -89,7 +89,8 @@ impl Telemetry {
     }
 }
 
-fn http() -> &'static reqwest::Client {
+/// One HTTP client (and connection pool) for every runtime call.
+pub(crate) fn http() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(reqwest::Client::new)
 }

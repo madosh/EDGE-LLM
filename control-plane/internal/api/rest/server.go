@@ -50,6 +50,12 @@ func NewRouter(
 	// Prometheus metrics endpoint (no auth)
 	r.Handle("/metrics", MetricsHandler())
 
+	// Liveness for container health checks. No auth, and it reveals nothing
+	// beyond "the server is answering".
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(apiKeyMiddleware(apiKey))
 		r.Get("/api/health", h.Health)
@@ -60,6 +66,13 @@ func NewRouter(
 		r.Post("/api/deployments", h.CreateDeployment)
 		r.Get("/api/deployments", h.ListDeployments)
 		r.Get("/api/deployments/{id}", h.GetDeployment)
+		r.Post("/api/deployments/{id}/promote", h.PromoteDeployment)
+		r.Post("/api/deployments/{id}/rollback", h.RollbackDeployment)
+
+		// Questions for the AI agent on a device
+		r.Post("/api/devices/{id}/tasks", h.CreateTask)
+		r.Get("/api/devices/{id}/tasks", h.ListTasks)
+		r.Get("/api/tasks/{id}", h.GetTask)
 
 		// Fleet-wide telemetry
 		r.Get("/api/telemetry/fleet", h.GetFleetSummary)

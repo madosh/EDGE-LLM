@@ -12,6 +12,8 @@ export interface Device {
 	agent_version: string;
 	arch: string;
 	os: string;
+	mem_total_mb: number;
+	accelerators: string[];
 	created_at: string;
 }
 
@@ -32,7 +34,14 @@ export interface DeviceDeployment {
 	deployment_id: string;
 	device_id: string;
 	device_name: string;
-	status: 'pending' | 'downloading' | 'verifying' | 'running' | 'failed';
+	status:
+		| 'pending'
+		| 'downloading'
+		| 'verifying'
+		| 'running'
+		| 'failed'
+		| 'skipped'
+		| 'rolled_back';
 	error_msg: string | null;
 	updated_at: string;
 }
@@ -43,10 +52,53 @@ export interface Deployment {
 	artifact_url: string;
 	artifact_sha256: string;
 	tag_selector: Record<string, string>;
-	status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'partial_failure';
+	rollout_percent: number;
+	requirements: Requirements;
+	status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'partial_failure' | 'rolled_back';
 	created_at: string;
 	completed_at: string | null;
 	devices: DeviceDeployment[];
+}
+
+/** What a model needs from a device; unset fields mean no requirement. */
+export interface Requirements {
+	min_mem_mb?: number;
+	accelerator?: 'cpu' | 'gpu' | 'npu';
+	arch?: string[];
+}
+
+/** What happened per device when a deployment was created or promoted. */
+export interface Targeting {
+	targeted: string[];
+	skipped: Record<string, string>;
+	held_back: number;
+}
+
+export interface RollbackResult {
+	deployment_id: string;
+	restored: Record<string, string>;
+	no_previous: string[];
+}
+
+export interface AgentStep {
+	tool: string;
+	arguments: unknown;
+	result: string;
+}
+
+export interface AgentTask {
+	id: string;
+	device_id: string;
+	prompt: string;
+	max_steps: number;
+	status: 'pending' | 'running' | 'done' | 'failed';
+	answer: string | null;
+	error_msg: string | null;
+	steps: AgentStep[];
+	model_id: string | null;
+	duration_ms: number | null;
+	created_at: string;
+	completed_at: string | null;
 }
 
 export interface ArtifactInfo {
@@ -112,7 +164,18 @@ export const api = {
 		artifact_url: string;
 		artifact_sha256: string;
 		tag_selector: Record<string, string>;
-	}) => post<Deployment>('/api/deployments', body),
+		rollout_percent?: number;
+		requirements?: Requirements;
+		all_devices?: boolean;
+	}) => post<Deployment & { targeting: Targeting }>('/api/deployments', body),
+	promoteDeployment: (id: string, rollout_percent: number) =>
+		post<Deployment & { targeting: Targeting }>(`/api/deployments/${id}/promote`, { rollout_percent }),
+	rollbackDeployment: (id: string) => post<RollbackResult>(`/api/deployments/${id}/rollback`, {}),
+
+	// On-device AI agent
+	askDevice: (deviceId: string, prompt: string) =>
+		post<AgentTask>(`/api/devices/${deviceId}/tasks`, { prompt }),
+	deviceTasks: (deviceId: string) => get<AgentTask[]>(`/api/devices/${deviceId}/tasks`),
 
 	// Fleet-wide telemetry
 	fleetSummary: (window = '5m') =>

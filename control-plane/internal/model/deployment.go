@@ -10,6 +10,7 @@ const (
 	DeploymentCompleted      DeploymentStatus = "completed"
 	DeploymentFailed         DeploymentStatus = "failed"
 	DeploymentPartialFailure DeploymentStatus = "partial_failure"
+	DeploymentRolledBack     DeploymentStatus = "rolled_back"
 )
 
 type DeviceDeploymentStatus string
@@ -20,6 +21,9 @@ const (
 	DDVerifying   DeviceDeploymentStatus = "verifying"
 	DDRunning     DeviceDeploymentStatus = "running"
 	DDFailed      DeviceDeploymentStatus = "failed"
+	// Set by the control plane, never by a device:
+	DDSkipped    DeviceDeploymentStatus = "skipped"     // device does not meet the requirements
+	DDRolledBack DeviceDeploymentStatus = "rolled_back" // the deployment was rolled back
 )
 
 // IsAckStatus reports whether s is a status a device may report for its own
@@ -38,6 +42,8 @@ type Deployment struct {
 	ArtifactURL    string             `json:"artifact_url"`
 	ArtifactSHA256 string             `json:"artifact_sha256"`
 	TagSelector    map[string]string  `json:"tag_selector"`
+	RolloutPercent int                `json:"rollout_percent"`
+	Requirements   Requirements       `json:"requirements"`
 	Status         DeploymentStatus   `json:"status"`
 	CreatedAt      time.Time          `json:"created_at"`
 	CompletedAt    *time.Time         `json:"completed_at"`
