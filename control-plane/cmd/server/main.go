@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/cami-fleet/control-plane/internal/api/devicehttp"
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
 	restapi "github.com/cami-fleet/control-plane/internal/api/rest"
 	natsclient "github.com/cami-fleet/control-plane/internal/events/nats"
@@ -96,6 +97,21 @@ func main() {
 		}
 	}()
 
+	// ── Device HTTPS API (for devices too small for gRPC) ─────────────────────
+	var deviceSrv *http.Server
+	if cfg.DeviceHTTPSPort != "off" {
+		deviceSrv, err = devicehttp.NewServer(":"+cfg.DeviceHTTPSPort, cfg.CertDir, devicehttp.NewHandler(grpcSrv, pg))
+		if err != nil {
+			log.Fatal().Err(err).Msg("device https listen failed")
+		}
+		go func() {
+			log.Info().Str("addr", deviceSrv.Addr).Msg("device HTTPS API listening (mTLS, TLS 1.2+)")
+			if err := deviceSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				log.Fatal().Err(err).Msg("device https server failed")
+			}
+		}()
+	}
+
 	// ── Offline detector ──────────────────────────────────────────────────────
 	go runOfflineDetector(ctx, pg, nc, webhookNotifier)
 
@@ -112,6 +128,11 @@ func main() {
 		log.Warn().Err(err).Msg("HTTP server shutdown error")
 	}
 	log.Info().Msg("HTTP server stopped")
+	if deviceSrv != nil {
+		if err := deviceSrv.Shutdown(shutCtx); err != nil {
+			log.Warn().Err(err).Msg("device HTTPS server shutdown error")
+		}
+	}
 }
 
 // runOfflineDetector marks devices offline when last heartbeat > 30 s ago,
@@ -164,6 +185,7 @@ type config struct {
 	NATSURL          string
 	GRPCPort         string
 	RESTPort         string
+	DeviceHTTPSPort  string // "off" disables the device HTTPS API
 	APIKey           string
 	CertDir          string
 	ArtifactsDir     string
@@ -179,6 +201,7 @@ func loadConfig() config {
 		NATSURL:          getEnv("NATS_URL", "nats://localhost:4222"),
 		GRPCPort:         getEnv("GRPC_PORT", "9090"),
 		RESTPort:         restPort,
+		DeviceHTTPSPort:  getEnv("DEVICE_HTTPS_PORT", "8443"),
 		APIKey:           getEnv("API_KEY", "changeme"),
 		CertDir:          getEnv("CERT_DIR", "/certs"),
 		ArtifactsDir:     getEnv("ARTIFACTS_DIR", "/artifacts"),

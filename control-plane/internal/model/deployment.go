@@ -59,6 +59,16 @@ type DeviceDeployment struct {
 	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
+// Assignment is one deployment as seen by a single device: which model, and
+// how far this device got with it (or why it was skipped).
+type Assignment struct {
+	DeploymentID string                 `json:"deployment_id"`
+	ModelID      string                 `json:"model_id"`
+	Status       DeviceDeploymentStatus `json:"status"`
+	ErrorMsg     *string                `json:"error_msg"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+}
+
 type ArtifactInfo struct {
 	Name   string `json:"name"`
 	URL    string `json:"url"`

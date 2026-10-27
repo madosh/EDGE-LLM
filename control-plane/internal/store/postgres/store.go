@@ -404,6 +404,32 @@ func (s *Store) GetPendingDeployments(ctx context.Context, deviceID string) ([]m
 	return deployments, rows.Err()
 }
 
+// DeviceAssignments returns the deployments that apply to one device, newest
+// first, with this device's status on each.
+func (s *Store) DeviceAssignments(ctx context.Context, deviceID string, limit int) ([]model.Assignment, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT dd.deployment_id, d.model_id, dd.status, dd.error_msg, dd.updated_at
+		FROM device_deployments dd
+		JOIN deployments d ON d.id = dd.deployment_id
+		WHERE dd.device_id = $1
+		ORDER BY d.created_at DESC
+		LIMIT $2
+	`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Assignment
+	for rows.Next() {
+		var a model.Assignment
+		if err := rows.Scan(&a.DeploymentID, &a.ModelID, &a.Status, &a.ErrorMsg, &a.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpdateDeviceDeploymentStatus(ctx context.Context, deploymentID, deviceID, status, errorMsg string) error {
 	var errMsgPtr *string
 	if errorMsg != "" {

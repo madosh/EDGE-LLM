@@ -237,6 +237,16 @@ Deploy it to `{"runtime": "litert"}` with the digest from the `.sha256` file. (`
 > For LiteRT running inside an Android app — the runtime loading a model on a phone — see
 > [`examples/litert-android`](examples/litert-android/README.md).
 
+### A status display on an ESP32
+
+A 2.8" ESP32-S3 touch board can join the fleet as a device that shows, on its
+own screen, what the control plane decided for it: the deployment it got, or
+why it was skipped (*"needs 2048 MB RAM, device has 1 MB"*). It registers with
+its own certificate and heartbeats like any agent, but talks JSON over HTTPS
+(port 8443, mutual TLS, same identity checks) because gRPC over TLS 1.3 is too
+much for it. Firmware in [`firmware/esp32-display`](firmware/esp32-display/README.md);
+setup, protocol and demo script in [docs/esp32-display.md](docs/esp32-display.md).
+
 ---
 
 ## Examples
@@ -260,6 +270,7 @@ Deploy it to `{"runtime": "litert"}` with the digest from the `.sha256` file. (`
 │   ├── cmd/server/main.go       Entry point + config
 │   └── internal/
 │       ├── api/grpc/            gRPC server (register, heartbeat, deploy, telemetry)
+│       ├── api/devicehttp/      Same device API as JSON over HTTPS, for microcontrollers
 │       ├── api/rest/            REST API (devices, deployments, artifacts)
 │       ├── store/postgres/      Device state + deployments
 │       ├── store/clickhouse/    Time-series telemetry
@@ -272,6 +283,8 @@ Deploy it to `{"runtime": "litert"}` with the digest from the `.sha256` file. (`
 │       ├── grpc_client.rs       mTLS gRPC connection
 │       ├── model_runtime.rs     Multi-backend runtime (LiteRT, Ollama, Stub)
 │       └── telemetry.rs         Streaming telemetry loop
+│
+├── firmware/esp32-display/      C++ (PlatformIO) — ESP32-S3 status display device
 │
 ├── web/                         SvelteKit — operator dashboard
 │   └── src/routes/
@@ -355,6 +368,7 @@ docker compose down -v
 | REST API | 8080 | HTTP |
 | Prometheus Metrics | 8080/metrics | HTTP |
 | gRPC | 9090 | gRPC / mTLS |
+| Device HTTPS API | 8443 | HTTPS / mTLS (`DEVICE_HTTPS_PORT`, `off` disables) |
 | Prometheus | 9091 | HTTP |
 | Grafana | 3001 | HTTP |
 | Postgres | 5432 | TCP |

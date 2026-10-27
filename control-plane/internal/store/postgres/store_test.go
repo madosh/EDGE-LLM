@@ -259,6 +259,43 @@ func TestDeploymentPartialFailure(t *testing.T) {
 	}
 }
 
+func TestDeviceAssignmentsNewestFirstWithReason(t *testing.T) {
+	store := newStore(t)
+	ctx := context.Background()
+
+	devID, err := store.UpsertDevice(ctx, "asg-dev-"+pgstore.GenerateUUID()[:8], map[string]string{}, "0.1.0")
+	if err != nil {
+		t.Fatalf("UpsertDevice: %v", err)
+	}
+	older, _ := store.CreateDeployment(ctx, "asg-older", "http://cp/a", "sha", map[string]string{})
+	time.Sleep(10 * time.Millisecond)
+	newer, _ := store.CreateDeployment(ctx, "asg-newer", "http://cp/b", "sha", map[string]string{})
+
+	if _, err := store.TargetDevice(ctx, older.ID, devID, "pending", ""); err != nil {
+		t.Fatalf("TargetDevice: %v", err)
+	}
+	if _, err := store.TargetDevice(ctx, newer.ID, devID, "skipped", "needs 2048 MB RAM, device has 1 MB"); err != nil {
+		t.Fatalf("TargetDevice: %v", err)
+	}
+
+	got, err := store.DeviceAssignments(ctx, devID, 10)
+	if err != nil {
+		t.Fatalf("DeviceAssignments: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 assignments, got %d", len(got))
+	}
+	if got[0].ModelID != "asg-newer" || got[0].Status != "skipped" {
+		t.Errorf("expected newest first and skipped, got %s/%s", got[0].ModelID, got[0].Status)
+	}
+	if got[0].ErrorMsg == nil || *got[0].ErrorMsg != "needs 2048 MB RAM, device has 1 MB" {
+		t.Errorf("expected skip reason, got %v", got[0].ErrorMsg)
+	}
+	if got[1].ModelID != "asg-older" || got[1].Status != "pending" {
+		t.Errorf("expected older pending second, got %s/%s", got[1].ModelID, got[1].Status)
+	}
+}
+
 func TestGetDeviceNotFound(t *testing.T) {
 	store := newStore(t)
 	ctx := context.Background()

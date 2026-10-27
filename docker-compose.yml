@@ -185,6 +185,9 @@ services:
       NATS_URL:            "nats://nats:4222"
       GRPC_PORT:           "9090"
       REST_PORT:           "8080"
+      # Device API as JSON over HTTPS (mTLS) for microcontrollers such as the
+      # ESP32 status display; "off" disables it.
+      DEVICE_HTTPS_PORT:   "8443"
       API_KEY:             "${CAMI_API_KEY:-changeme}"
       CERT_DIR:            /certs
       ARTIFACTS_DIR:       /artifacts
@@ -192,6 +195,7 @@ services:
     ports:
       - "8080:8080"
       - "9090:9090"
+      - "8443:8443"
     volumes:
       - type: volume
         source: certs

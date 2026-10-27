@@ -3,12 +3,10 @@ package grpc
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"sync"
 	"time"
 
@@ -25,6 +23,7 @@ import (
 	"github.com/cami-fleet/control-plane/internal/fleet"
 	"github.com/cami-fleet/control-plane/internal/metrics"
 	"github.com/cami-fleet/control-plane/internal/model"
+	"github.com/cami-fleet/control-plane/internal/mtls"
 	"github.com/cami-fleet/control-plane/internal/notify"
 	chstore "github.com/cami-fleet/control-plane/internal/store/clickhouse"
 	pgstore "github.com/cami-fleet/control-plane/internal/store/postgres"
@@ -147,6 +146,13 @@ func (s *Server) authorizeDevice(ctx context.Context, rpc, deviceID string) erro
 	if err != nil {
 		return err
 	}
+	return s.Authorize(ctx, rpc, caller, deviceID)
+}
+
+// Authorize returns nil only if deviceID belongs to caller, the common name
+// of a verified client certificate. Transports other than gRPC (the device
+// HTTPS API) read the caller from their own TLS state and check it here.
+func (s *Server) Authorize(ctx context.Context, rpc, caller, deviceID string) error {
 	name, err := s.deviceName(ctx, deviceID)
 	if err != nil {
 		metrics.IdentityRejections.WithLabelValues(rpc).Inc()
@@ -180,6 +186,11 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	if err != nil {
 		return nil, err
 	}
+	return s.RegisterAs(ctx, caller, req)
+}
+
+// RegisterAs registers the device whose verified certificate names caller.
+func (s *Server) RegisterAs(ctx context.Context, caller string, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	if req.DeviceName != caller {
 		metrics.IdentityRejections.WithLabelValues("Register").Inc()
 		log.Warn().Str("cert_cn", caller).Str("claimed_name", req.DeviceName).
@@ -202,7 +213,16 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 }
 
 func (s *Server) SendHeartbeat(ctx context.Context, req *pb.Heartbeat) (*pb.HeartbeatAck, error) {
-	if err := s.authorizeDevice(ctx, "SendHeartbeat", req.DeviceId); err != nil {
+	caller, err := peerName(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.HeartbeatAs(ctx, caller, req)
+}
+
+// HeartbeatAs records a liveness pulse from caller's device.
+func (s *Server) HeartbeatAs(ctx context.Context, caller string, req *pb.Heartbeat) (*pb.HeartbeatAck, error) {
+	if err := s.Authorize(ctx, "SendHeartbeat", caller, req.DeviceId); err != nil {
 		return nil, err
 	}
 	if err := s.pg.TouchHeartbeat(ctx, req.DeviceId); err != nil {
@@ -281,7 +301,7 @@ func (s *Server) WatchDeployments(req *pb.WatchRequest, stream pb.AgentService_W
 	// Desired state: make sure the newest deployment this device should run
 	// applies to it. This is how a device that joined (or changed labels,
 	// or upgraded) after a deployment was created still receives it.
-	s.reconcile(ctx, deviceID)
+	s.Reconcile(ctx, deviceID)
 
 	// Send deployments not yet finished on this device: never started, or
 	// interrupted mid-download or mid-verify.
@@ -313,10 +333,10 @@ func (s *Server) WatchDeployments(req *pb.WatchRequest, stream pb.AgentService_W
 	}
 }
 
-// reconcile targets the device with the deployment it should be running, if
+// Reconcile targets the device with the deployment it should be running, if
 // it is not targeted already. Errors are logged: a failed reconcile must not
 // stop the device from receiving deployments it already has.
-func (s *Server) reconcile(ctx context.Context, deviceID string) {
+func (s *Server) Reconcile(ctx context.Context, deviceID string) {
 	dev, err := s.pg.GetDevice(ctx, deviceID)
 	if err != nil {
 		log.Warn().Err(err).Str("device_id", deviceID).Msg("reconcile: load device failed")
@@ -348,7 +368,16 @@ func (s *Server) reconcile(ctx context.Context, deviceID string) {
 }
 
 func (s *Server) AckDeployment(ctx context.Context, req *pb.DeploymentAck) (*pb.Empty, error) {
-	if err := s.authorizeDevice(ctx, "AckDeployment", req.DeviceId); err != nil {
+	caller, err := peerName(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.AckAs(ctx, caller, req)
+}
+
+// AckAs records caller's device's progress on one deployment.
+func (s *Server) AckAs(ctx context.Context, caller string, req *pb.DeploymentAck) (*pb.Empty, error) {
+	if err := s.Authorize(ctx, "AckDeployment", caller, req.DeviceId); err != nil {
 		return nil, err
 	}
 	if !model.IsAckStatus(req.Status) {
@@ -483,27 +512,9 @@ func (h *GRPCHandle) GracefulStop() {
 
 // Listen creates and binds the gRPC listener with mTLS. Call Serve() to start accepting.
 func Listen(addr, certDir string, srv *Server) (*GRPCHandle, error) {
-	serverCert, err := tls.LoadX509KeyPair(
-		certDir+"/server.crt",
-		certDir+"/server.key",
-	)
+	tlsCfg, err := mtls.ServerConfig(certDir, tls.VersionTLS13)
 	if err != nil {
-		return nil, fmt.Errorf("load server cert: %w", err)
-	}
-	caCert, err := os.ReadFile(certDir + "/ca.crt")
-	if err != nil {
-		return nil, fmt.Errorf("read ca cert: %w", err)
-	}
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("no certificates found in %s/ca.crt", certDir)
-	}
-
-	tlsCfg := &tls.Config{
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    caPool,
-		Certificates: []tls.Certificate{serverCert},
-		MinVersion:   tls.VersionTLS13,
+		return nil, err
 	}
 
 	grpcSrv := ggrpc.NewServer(

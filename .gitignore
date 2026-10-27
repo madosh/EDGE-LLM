@@ -30,6 +30,11 @@ certs/
 *.pfx
 *.srl
 
+# ── ESP32 display firmware (build output, Wi-Fi password, device key) ──
+firmware/esp32-display/.pio/
+firmware/esp32-display/include/secrets.h
+firmware/esp32-display/certs/
+
 # ── Artifacts (generated at runtime) ───────────
 artifacts/*.tar.gz
 artifacts/*.sha256
