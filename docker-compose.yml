@@ -132,13 +132,35 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      # The image ships no curl; the ollama CLI queries the local server.
+      test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
       retries: 12
     networks:
       - fleet
     restart: unless-stopped
+
+  # ── Load generator — scripts/load-test.sh ───────────────────────────────────
+  # Simulated agents with real mTLS identities. It mints their certificates
+  # from the fleet CA, so it is the only service besides cert-gen that mounts
+  # the CA key, and only when this profile is asked for.
+  loadgen:
+    profiles: ["loadtest"]
+    build:
+      context: .
+      dockerfile: control-plane/Dockerfile
+      target: loadgen
+    user: "0"  # the CA key is readable by root only
+    environment:
+      CAMI_API_KEY: "${CAMI_API_KEY:-changeme}"
+    volumes:
+      - ca-private:/ca:ro
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    networks:
+      - fleet
 
   # ── Prometheus ───────────────────────────────────────────────────────────────
   prometheus:

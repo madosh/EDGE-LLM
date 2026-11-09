@@ -9,8 +9,9 @@
 #define WIFI_SSID "your-wifi"
 #define WIFI_PASSWORD "your-wifi-password"
 
-// Where the control plane's device HTTPS API listens: the LAN IP (or a
-// hostname this network resolves) of the machine running docker compose.
+// Where the control plane's device HTTPS API listens: the LAN IP, a DNS name,
+// or "pc-name.local" (multicast DNS) of the machine running docker compose.
+// Prefer .local or a DHCP reservation: a fixed IP breaks when DHCP moves the PC.
 #define CP_ADDRESS "192.168.1.20"
 #define CP_PORT 8443
 // A DNS name in the server certificate. The board connects to CP_ADDRESS but

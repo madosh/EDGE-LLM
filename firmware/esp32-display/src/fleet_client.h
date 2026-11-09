@@ -8,6 +8,7 @@
 #include <Arduino.h>
 
 constexpr int kMaxAssignments = 5;
+constexpr int kMaxAgents = 6;
 
 // One deployment as this device sees it.
 struct Assignment {
@@ -15,6 +16,27 @@ struct Assignment {
   String modelId;
   String status;    // pending | downloading | verifying | running | failed | skipped | rolled_back
   String errorMsg;  // the skip or failure reason, if any
+};
+
+// One fleet member, plus what its newest deployment asked of it.
+struct Agent {
+  String name;
+  String status;  // online | offline
+  String arch;
+  int memMb = 0;
+  String accelerators;  // "cpu, gpu", or "none"
+  String currentModel;
+  bool asked = false;
+  String modelId;
+  String askStatus;
+  String reason;
+  int needMem = 0;
+  String needAccel;
+  String needArch;  // "aarch64 or x86_64", empty when the model accepts any
+  bool live = false;  // a telemetry sample from the last few minutes
+  float tps = 0;
+  int ttftMs = 0;
+  String source;  // probe = measured on a real runtime, stub = simulated
 };
 
 // What GET /device/v1/state returned.
@@ -29,6 +51,9 @@ struct FleetState {
 
   Assignment assignments[kMaxAssignments];  // newest first
   int assignmentCount = 0;
+
+  Agent agents[kMaxAgents];  // running first
+  int agentCount = 0;
 
   int devicesOnline = 0;
   int devicesOffline = 0;
@@ -59,4 +84,6 @@ class FleetClient {
   bool resolve(IPAddress& ip);
 
   String lastError_;
+  IPAddress cached_;  // last address a name resolved to; cleared on connect failure
+  bool mdnsStarted_ = false;
 };

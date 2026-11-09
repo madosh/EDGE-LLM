@@ -38,6 +38,9 @@ firmware/esp32-display/certs/
 # ── Artifacts (generated at runtime) ───────────
 artifacts/*.tar.gz
 artifacts/*.sha256
+artifacts/*.gguf
+artifacts/*.litertlm
+artifacts/*.bin
 
 # ── Docker ─────────────────────────────────────
 docker-compose.override.yml

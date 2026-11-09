@@ -22,15 +22,26 @@ bool TapSensor::begin() {
   return present_;
 }
 
-bool TapSensor::tapped() {
+bool TapSensor::take(int& x, int& y) {
   if (!present_) return false;
   Wire.beginTransmission(TOUCH_I2C_ADDR);
   Wire.write(kRegTouchCount);
   if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom(static_cast<uint8_t>(TOUCH_I2C_ADDR), static_cast<uint8_t>(1)) != 1) return false;
+  // TD_STATUS, then the first point's X and Y, each 12 bits across two bytes.
+  if (Wire.requestFrom(static_cast<uint8_t>(TOUCH_I2C_ADDR), static_cast<uint8_t>(5)) != 5) return false;
+  uint8_t raw[5];
+  for (uint8_t& b : raw) b = static_cast<uint8_t>(Wire.read());
 
-  bool down = (Wire.read() & 0x0F) > 0;
-  bool released = down_ && !down;
+  bool down = (raw[0] & 0x0F) > 0;
+  if (down) {
+    lastX_ = ((raw[1] & 0x0F) << 8) | raw[2];
+    lastY_ = ((raw[3] & 0x0F) << 8) | raw[4];
+    havePoint_ = true;
+  }
+  bool released = down_ && !down && havePoint_;
   down_ = down;
-  return released;
+  if (!released) return false;
+  x = lastX_;
+  y = lastY_;
+  return true;
 }

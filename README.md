@@ -10,6 +10,18 @@ A control plane and device agent system for managing **edge AI deployments at sc
 
 Deploy models to devices by tag, watch each device download, verify the SHA-256, load the model, and stream live inference telemetry — all from an operator dashboard.
 
+<!-- Demo video: record the ESP32 display while scripts/demo-failures.sh runs, save as docs/demo.gif, then uncomment.
+![Cami Fleet demo](docs/demo.gif)
+-->
+
+**Measured, not claimed** ([full results](docs/results.md)):
+
+- A real model (Qwen2.5-0.5B, 469 MB) deployed through the fleet, hash-verified on the device, then serving at **62.6 tok/s** median on CPU.
+- **1,000 simulated agents**, each with its own mTLS certificate. Zero errors, heartbeat p50 11 ms, 312 MB of control-plane memory. One deployment reached all of them in 10.7 s.
+- Failure paths checked on every CI run: tampered artifact refused, rollback, offline detection, certificate revocation (streams cut in 5 s).
+
+Read more: [one-page overview](docs/cami-fleet.html) · [design decisions](docs/decisions.md) · [field notes](docs/field-notes.md) · [ESP32 display](docs/esp32-display.md)
+
 ## How it works
 
 ```mermaid
@@ -232,19 +244,20 @@ sha256sum artifacts/gemma-4-E4B-it.litertlm > artifacts/gemma-4-E4B-it.litertlm.
 docker compose --profile litert up --build
 ```
 
-Deploy it to `{"runtime": "litert"}` with the digest from the `.sha256` file. (`--profile ollama` does the same for a GGUF model on Ollama.)
+Deploy it to `{"runtime": "litert"}` with the digest from the `.sha256` file. (`--profile ollama` does the same for a GGUF model on Ollama; [docs/results.md](docs/results.md#1-real-inference-through-the-fleet) walks through it with Qwen2.5-0.5B. Then run `scripts/fleet-bench.sh device-edge-ollama` for a table of the measured numbers.)
 
 > For LiteRT running inside an Android app — the runtime loading a model on a phone — see
 > [`examples/litert-android`](examples/litert-android/README.md).
 
 ### A status display on an ESP32
 
-A 2.8" ESP32-S3 touch board can join the fleet as a device that shows, on its
-own screen, what the control plane decided for it: the deployment it got, or
-why it was skipped (*"needs 2048 MB RAM, device has 1 MB"*). It registers with
-its own certificate and heartbeats like any agent, but talks JSON over HTTPS
-(port 8443, mutual TLS, same identity checks) because gRPC over TLS 1.3 is too
-much for it. Firmware in [`firmware/esp32-display`](firmware/esp32-display/README.md);
+A 2.8" ESP32-S3 touch board can join the fleet as a live agent dashboard. It
+lists who is up and, on a tap, what that agent's newest deployment needed
+(RAM, accelerator, architecture), whether the agent has it, and its live
+tokens/s and time to first token, marked measured or simulated. It registers
+with its own certificate and heartbeats like any agent, but talks JSON over
+HTTPS (port 8443, mutual TLS, same identity checks) because gRPC over TLS 1.3
+is too much for it. Firmware in [`firmware/esp32-display`](firmware/esp32-display/README.md);
 setup, protocol and demo script in [docs/esp32-display.md](docs/esp32-display.md).
 
 ---
@@ -293,9 +306,20 @@ setup, protocol and demo script in [docs/esp32-display.md](docs/esp32-display.md
 │       └── devices/[id]/        Device detail + telemetry
 │
 ├── monitoring/                  Prometheus + Grafana dashboards
-├── scripts/gen-certs.sh         mTLS certificate generation
+├── scripts/
+│   ├── gen-certs.sh             mTLS certificate generation
+│   ├── revoke-device.sh         Revoke / un-revoke one device's certificate
+│   ├── e2e.sh                   End-to-end test (CI)
+│   ├── demo-failures.sh         Failure paths, live (CI)
+│   ├── load-test.sh             N agents with real identities (cmd/loadgen)
+│   └── fleet-bench.sh           Measured inference numbers as a table
 ├── artifacts/                   Model artifacts (generated at runtime)
-└── docs/architecture.html       Interactive architecture documentation
+└── docs/
+    ├── cami-fleet.html          One-page overview with diagrams
+    ├── results.md               Measured results and how to reproduce them
+    ├── decisions.md             Design decisions and their costs
+    ├── field-notes.md           Problems found on real hardware, and fixes
+    └── architecture.html        Interactive architecture documentation
 ```
 
 ---
@@ -355,8 +379,16 @@ cd web && npm test
 cp .env.example .env && docker compose up -d --build
 scripts/e2e.sh        # deploy, telemetry, requirements, rollback, canary,
                       # ask-a-device, control-plane restart, late-joining device
+scripts/demo-failures.sh   # tampered artifact, staged canary, offline, revocation
 docker compose down -v
+
+# Load: N agents with their own certificates (results in docs/results.md)
+scripts/load-test.sh 1000 && scripts/load-test.sh --cleanup
 ```
+
+Go tests that need Postgres skip without one. CI gives them a throwaway
+Postgres. Locally, set `POSTGRES_DSN` to a database you can throw away, never
+the one the stack uses: some tests create deployments.
 
 ---
 
@@ -410,6 +442,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 This is a reference design. What it does not do yet:
 
 - **One control-plane instance.** Live deployment streams are tracked in memory; a second instance would not see devices connected to the first.
+- **Fan-out is serial.** Creating a deployment targets matching devices one at a time, about 10.7 ms each: 10.7 s for 1,000 devices ([measured](docs/results.md#3-control-plane-under-load)). Batched inserts and concurrent pushes would remove it.
+- **Revocation is a local list.** `scripts/revoke-device.sh NAME` cuts a device off within seconds, but there is no CRL/OCSP and certificates are long-lived ([why](docs/decisions.md#7-revocation-is-a-serial-list-the-control-plane-re-reads)).
 - **Reconciliation happens on connect.** A device that joins or changes labels gets its desired deployment when it (re)connects, not while it stays connected.
 - **Rollback needs history.** Devices that never ran an earlier model keep the rolled-back one loaded; there is no "unload" instruction yet.
 - **Agent tools are read-only and fixed.** Three built-in tools; there is no per-device tool permission model or tool plugin system yet.
@@ -421,6 +455,11 @@ This is a reference design. What it does not do yet:
 This is a reference project, not a hardened product. See [SECURITY.md](SECURITY.md)
 for how to report a vulnerability privately and what to change before running it
 on an untrusted network.
+
+A lost or compromised device is cut off with `scripts/revoke-device.sh NAME`.
+Its certificate's serial goes into `revoked.txt`, which the control plane
+re-reads on change. New handshakes are refused at once and open streams are
+closed within 5 s. `--undo` lifts it.
 
 ## License
 

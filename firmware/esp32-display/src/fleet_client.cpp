@@ -1,6 +1,7 @@
 #include "fleet_client.h"
 
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
@@ -10,7 +11,7 @@ namespace {
 
 constexpr const char* kAgentVersion = "cami-display/0.1.0";
 constexpr uint32_t kResponseTimeoutMs = 10000;
-constexpr size_t kMaxResponseBytes = 8192;
+constexpr size_t kMaxResponseBytes = 16384;
 
 // RAM reported at registration, in MiB, rounded up. The control plane treats
 // 0 as "unknown" and would not hold the board to a model's memory
@@ -48,9 +49,26 @@ String trimmedMessage(const String& body) {
 
 bool FleetClient::resolve(IPAddress& ip) {
   if (ip.fromString(CP_ADDRESS)) return true;
-  if (WiFi.hostByName(CP_ADDRESS, ip) == 1) return true;
-  lastError_ = String("cannot resolve ") + CP_ADDRESS;
-  return false;
+  if (cached_ != IPAddress()) {
+    ip = cached_;
+    return true;
+  }
+  String host = CP_ADDRESS;
+  if (host.endsWith(".local")) {
+    // The core's DNS client does not speak multicast DNS, so "pc-name.local"
+    // has to be asked on the LAN directly. This is what lets the PC change
+    // its DHCP address without a reflash.
+    if (!mdnsStarted_) mdnsStarted_ = MDNS.begin(DEVICE_NAME);
+    if (mdnsStarted_) ip = MDNS.queryHost(host.substring(0, host.length() - 6), 2000);
+  } else if (WiFi.hostByName(CP_ADDRESS, ip) != 1) {
+    ip = IPAddress();
+  }
+  if (ip == IPAddress()) {
+    lastError_ = String("cannot resolve ") + CP_ADDRESS;
+    return false;
+  }
+  cached_ = ip;
+  return true;
 }
 
 int FleetClient::request(const char* method, const String& path, const String& body, String& response) {
@@ -67,6 +85,7 @@ int FleetClient::request(const char* method, const String& path, const String& b
     char reason[100] = {0};
     tls.lastError(reason, sizeof(reason));
     lastError_ = String("TLS to ") + CP_ADDRESS + ":" + CP_PORT + " failed: " + reason;
+    cached_ = IPAddress();  // the host may have moved; look it up again next time
     return kTransportError;
   }
 
@@ -212,6 +231,45 @@ int FleetClient::fetchState(const String& deviceId, FleetState& state) {
   next.deploymentsCompleted = deployments["completed"] | 0;
   next.deploymentsFailed = (deployments["failed"] | 0) + (deployments["partial_failure"] | 0);
   next.deploymentsRolledBack = deployments["rolled_back"] | 0;
+
+  for (JsonObject a : doc["agents"].as<JsonArray>()) {
+    if (next.agentCount == kMaxAgents) break;
+    Agent& out = next.agents[next.agentCount++];
+    out.name = a["name"] | "";
+    out.status = a["status"] | "";
+    out.arch = a["arch"] | "";
+    out.memMb = a["mem_total_mb"] | 0;
+    out.currentModel = a["current_model"] | "";
+    out.accelerators = "none";
+    for (JsonVariant accel : a["accelerators"].as<JsonArray>()) {
+      const char* name = accel.as<const char*>();
+      if (name == nullptr || name[0] == '\0') continue;
+      if (out.accelerators == "none") out.accelerators = name;
+      else out.accelerators += String(", ") + name;
+    }
+    JsonObject asked = a["asked"];
+    if (!asked.isNull()) {
+      out.asked = true;
+      out.modelId = asked["model_id"] | "";
+      out.askStatus = asked["status"] | "";
+      out.reason = asked["reason"] | "";
+      out.needMem = asked["needs"]["min_mem_mb"] | 0;
+      out.needAccel = asked["needs"]["accelerator"] | "";
+      for (JsonVariant arch : asked["needs"]["arch"].as<JsonArray>()) {
+        const char* name = arch.as<const char*>();
+        if (name == nullptr || name[0] == '\0') continue;
+        if (out.needArch.length() > 0) out.needArch += " or ";
+        out.needArch += name;
+      }
+    }
+    JsonObject live = a["live"];
+    if (!live.isNull()) {
+      out.live = true;
+      out.tps = live["tps"] | 0.0f;
+      out.ttftMs = static_cast<int>((live["ttft_ms"] | 0.0f) + 0.5f);
+      out.source = live["source"] | "";
+    }
+  }
 
   next.valid = true;
   state = next;

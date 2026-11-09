@@ -430,6 +430,63 @@ func (s *Store) DeviceAssignments(ctx context.Context, deviceID string, limit in
 	return out, rows.Err()
 }
 
+// FleetAgents returns up to limit fleet members, running ones first, each
+// with the requirements of its newest deployment. The status display uses
+// this for its live list; it does not include artifact URLs or keys.
+func (s *Store) FleetAgents(ctx context.Context, limit int) ([]model.AgentView, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT d.id, d.name, d.status, d.arch, d.mem_total_mb, d.accelerators,
+		       COALESCE(d.current_model_id, ''),
+		       lat.model_id, lat.status, lat.error_msg, lat.requirements
+		FROM devices d
+		LEFT JOIN LATERAL (
+			SELECT dep.model_id, dd.status, dd.error_msg, dep.requirements
+			FROM device_deployments dd
+			JOIN deployments dep ON dep.id = dd.deployment_id
+			WHERE dd.device_id = d.id
+			ORDER BY dep.created_at DESC
+			LIMIT 1
+		) lat ON true
+		ORDER BY CASE WHEN d.status = 'online' THEN 0 ELSE 1 END, d.name
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []model.AgentView
+	for rows.Next() {
+		var v model.AgentView
+		var accelJSON, reqJSON []byte
+		var modelID, askStatus, reason *string
+		if err := rows.Scan(&v.ID, &v.Name, &v.Status, &v.Arch, &v.MemTotalMB, &accelJSON,
+			&v.CurrentModel, &modelID, &askStatus, &reason, &reqJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(accelJSON, &v.Accelerators); err != nil || v.Accelerators == nil {
+			v.Accelerators = []string{}
+		}
+		if modelID != nil {
+			ask := model.AgentAsk{ModelID: *modelID}
+			if askStatus != nil {
+				ask.Status = model.DeviceDeploymentStatus(*askStatus)
+			}
+			if reason != nil {
+				ask.Reason = *reason
+			}
+			if len(reqJSON) > 0 {
+				if err := json.Unmarshal(reqJSON, &ask.Needs); err != nil {
+					ask.Needs = model.Requirements{}
+				}
+			}
+			v.Asked = &ask
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpdateDeviceDeploymentStatus(ctx context.Context, deploymentID, deviceID, status, errorMsg string) error {
 	var errMsgPtr *string
 	if errorMsg != "" {

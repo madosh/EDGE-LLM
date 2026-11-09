@@ -19,9 +19,9 @@ step-by-step setup on Windows, a demo script, and troubleshooting.
 |---|---|
 | Register under its certificate's name, with labels and hardware facts | Run a model: no Rust agent, no LiteRT-LM |
 | Heartbeat every 10 s; the dashboard marks it offline 30 s after the last one | Stream telemetry (there is nothing to measure) |
-| Poll its own state every 5 s and draw it | Answer "Ask a device" questions (those stay pending) |
+| Poll the fleet every 5 s and list who is up | See artifact URLs, keys, or another device's certificate |
+| Tap an agent to see what its newest deployment needed | Answer "Ask a device" questions (those stay pending) |
 | Get **skipped** by deployments whose requirements it does not meet, and show the reason | Hold a deployment open: one that reaches it is reported `failed`, with the reason |
-| Show fleet-wide counts on a second screen (tap to switch) | See other devices' names, labels or models |
 
 A model needs gigabytes of RAM; this board has 512 KB of SRAM. So its role in
 a demo is the part of the system that is about **decisions**: targeting by
@@ -31,31 +31,37 @@ per-device identity, all visible on a screen on the desk.
 ### What you see
 
 ```
- Device view                      Fleet view (tap)
+ Agents                              Tap one
 ┌──────────────────────────┐     ┌──────────────────────────┐
-│ CAMI FLEET          ● ○  │     │ CAMI FLEET          ○ ●  │
-│ ┌──────────────────────┐ │     │ ┌──────────────────────┐ │
-│ │        ONLINE        │ │     │ │        ONLINE        │ │
-│ └──────────────────────┘ │     │ └──────────────────────┘ │
-│ esp32-display-1          │     │ DEVICES                  │
-│ location=desk            │     │ ┌─────┐ ┌─────┐ ┌─────┐  │
-│ type=esp32-display       │     │ │  3  │ │  1  │ │  4  │  │
-│ ──────────────────────── │     │ │onln │ │offln│ │total│  │
-│ NEWEST DEPLOYMENT FOR    │     │ └─────┘ └─────┘ └─────┘  │
-│ THIS DEVICE              │     │ DEPLOYMENTS              │
-│ gemma-4-e2b              │     │ ┌─────────┐ ┌─────────┐  │
-│ SKIPPED                  │     │ │ 1 in pr.│ │ 2 compl.│  │
-│ needs 2048 MB RAM,       │     │ ├─────────┤ ├─────────┤  │
-│ device has 1 MB          │     │ │ 1 failed│ │ 0 rolled│  │
-│                          │     │ └─────────┘ └─────────┘  │
-│ heartbeat 4 s ago -52 dBm│     │ heartbeat 4 s ago -52 dBm│
+│ AGENTS              2 up │     │ < AGENTS                 │
+│ ┌──────────────────────┐ │     │ device-barcelona-1    UP │
+│ │ ● device-barcelona-1 │ │     │ x86_64   6740 MB   cpu  │
+│ │   gemma   SKIPPED    │ │     │ running gemma-4-e2b      │
+│ │                      │ │     │ 27.4 tok/s 101 ms  stub  │
+│ ├──────────────────────┤ │     │ ──────────────────────── │
+│ │ ● device-barcelona-2 │ │     │ WHAT IT WAS ASKED        │
+│ │   nothing asked yet  │ │     │ gemma            SKIPPED │
+│ └──────────────────────┘ │     │ NEEDED                   │
+│                          │     │ RAM    2048 MB           │
+│                          │     │ Accel  gpu               │
+│                          │     │ Arch   aarch64           │
+│ heartbeat 4 s ago -52 dBm│     │ needs gpu, device has cpu│
 └──────────────────────────┘     └──────────────────────────┘
 ```
 
-The pill at the top is the link state: **CONNECTING WI-FI** and
-**REGISTERING** (amber), **ONLINE** (green), **UNREACHABLE** (red; the screen
-then shows the board's IP, the control-plane address and the last error). The
-RGB LED mirrors it: blue while starting, green online, red unreachable.
+Running agents are listed under **AGENTS**, green when they are up. Tap a row
+to see what that agent's newest deployment needed (RAM, accelerator, architecture)
+and whether the agent has it. Green means the requirement is met, red means it
+is not, and the skip or failure reason is under the list. Under the model
+line are the agent's latest tokens/s and time to first token: green and
+"measured" from a real runtime, grey and "stub" when simulated. Tap anywhere, or
+press BOOT, to go back. The header counts how many are up.
+
+While the board is not online, the pill at the top is the link state:
+**CONNECTING WI-FI** and **REGISTERING** (amber), **UNREACHABLE** (red; the
+screen then shows the board's IP, the control-plane address and the last
+error). The RGB LED mirrors it: blue while starting, green online, red
+unreachable.
 
 ---
 
@@ -244,7 +250,20 @@ GET /device/v1/state?device_id=3f1c…
   "fleet": {
     "devices": {"online": 3, "offline": 1},
     "deployments": {"completed": 2, "in_progress": 1, "failed": 1}
-  }
+  },
+  "agents": [
+    {
+      "name": "device-barcelona-1", "status": "online",
+      "arch": "x86_64", "mem_total_mb": 6740, "accelerators": ["cpu"],
+      "current_model": "",
+      "asked": {
+        "model_id": "gemma-4-e2b", "status": "skipped",
+        "reason": "needs gpu accelerator, device has cpu",
+        "needs": {"min_mem_mb": 2048, "accelerator": "gpu", "arch": ["aarch64"]}
+      },
+      "live": {"tps": 27.4, "ttft_ms": 100.6, "source": "stub"}
+    }
+  ]
 }
 ```
 
@@ -253,8 +272,19 @@ this device's status on each: `pending`, `downloading`, `verifying`,
 `running`, `failed`, `skipped` or `rolled_back`. `error_msg` carries the skip
 or failure reason.
 
-`fleet` holds counts only. A device learns how many devices and deployments are
-in each state, never which ones.
+`fleet` holds counts. `agents` is present only when the calling device's
+labels include `type=esp32-display`. It lists up to six fleet members, running
+ones first. Each card is the name, status, hardware, the model it is running,
+and `asked`: the newest deployment's model, status, the requirements
+(`min_mem_mb`, `accelerator`, `arch`) and the skip or failure reason. Other
+devices get `"agents": []`. Artifact URLs and internal device IDs are not
+included.
+
+`live` is the agent's latest telemetry sample from the last five minutes, while
+it is running a model: decode tokens/s, time to first token, and `source`.
+`probe` means measured on a real runtime (drawn green as "measured"); `stub`
+means simulated (drawn grey and labelled `stub`). It is absent when there is no
+recent sample, or when ClickHouse is unreachable; the list still renders.
 
 ### Ack
 
@@ -298,7 +328,7 @@ curl.exe --cacert certs\ca.crt --cert certs\device.crt --key certs\device.key `
 | Who is calling | The certificate's common name, from the verified TLS chain |
 | Impersonating another device | Register checks the name against the certificate. Every other call checks that the device ID belongs to it (`Authorize`). |
 | Server impersonation | The board verifies the server certificate against the fleet CA and the name `CP_TLS_NAME` |
-| What a device can read | Its own record, its own deployments, fleet-wide counts |
+| What a device can read | Its own record and deployments. A device labeled `type=esp32-display` also receives a short card per agent: name, status, hardware, and what the newest deployment needed. Not artifact URLs or keys |
 | Secrets on the board | Wi-Fi password and the device's private key, compiled into flash |
 | A lost board | That board's key can act only as that board: register it, heartbeat it, fail its own deployments |
 
@@ -330,8 +360,8 @@ limitation of the whole project, not of this board.
 | `include/secrets.h` | Wi-Fi, control-plane address, device name, labels, CA, certificate, key. Generated, git-ignored. |
 | [`src/main.cpp`](../firmware/esp32-display/src/main.cpp) | Tasks, the network state machine, the LED, input |
 | [`src/fleet_client.cpp`](../firmware/esp32-display/src/fleet_client.cpp) | mTLS HTTP client and JSON for the four endpoints |
-| [`src/ui.cpp`](../firmware/esp32-display/src/ui.cpp) | Panel driver config and the two screens |
-| [`src/touch.cpp`](../firmware/esp32-display/src/touch.cpp) | FT6336 tap detection |
+| [`src/ui.cpp`](../firmware/esp32-display/src/ui.cpp) | Panel driver config, the agent list and the requirement screen |
+| [`src/touch.cpp`](../firmware/esp32-display/src/touch.cpp) | FT6336 tap position |
 | [`src/snapshot.h`](../firmware/esp32-display/src/snapshot.h) | What the network task hands the UI |
 | [`tools/make_secrets.py`](../firmware/esp32-display/tools/make_secrets.py) | Writes `secrets.h` from the certificate files |
 
@@ -402,9 +432,10 @@ PSRAM a full-screen sprite (150 KB at 16 bits per pixel) would compete with
 mbedTLS for heap, so drawing goes straight to the panel. A full redraw takes
 about 60 ms at 20 MHz.
 
-Touch needs no calibration. The firmware reads only the touch-point count from
-register `0x02` and treats a lift as a tap. The BOOT button does the same, so
-the touchless ES3N28P works too.
+Touch reads the FT6336 point (registers `0x03`–`0x06`) and reports it when the
+finger lifts. A tap on a row opens that agent; a tap on the detail screen, or
+the BOOT button, goes back to the list. The touchless ES3N28P still uses BOOT
+to leave the detail screen, but it cannot pick a row.
 
 ### Memory
 
@@ -464,6 +495,15 @@ Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -match "
 Use the address on the same network as the board (for example `192.168.1.20`).
 The board's Wi-Fi is **2.4 GHz only**. If your router splits bands, join the
 2.4 GHz network.
+
+A fixed IP breaks when DHCP gives the PC a new one, and the board then shows
+errno 113. Two ways to avoid it:
+
+- Use `CP_ADDRESS "your-pc-name.local"` (the output of `hostname`, plus
+  `.local`). The firmware resolves `.local` names with multicast DNS, caches the
+  answer, and asks again after any failed connection. Windows answers mDNS for
+  its own name on networks set to **Private**.
+- Or reserve the PC's address in the router's DHCP settings.
 
 Allow port 8443 in through the Windows firewall (from an elevated PowerShell):
 
@@ -570,8 +610,10 @@ unplugged: `targeting.targeted` still lists the board, because offline devices
 are targeted too, and its row stays `pending`. Plug it back in. Within a few
 seconds of `ONLINE` it shows the new deployment and reports it.
 
-**4. Fleet at a glance.** Tap the screen. The fleet view counts devices and
-deployments by state. The two simulated devices from the quick start count too.
+**4. Live agents.** The screen lists who is up. Tap an agent to see the RAM,
+accelerator and architecture its newest deployment needed, and whether this
+agent has them. Tap again to go back. The two simulated devices from the quick
+start are in the list.
 
 **5. The control plane goes away.** `docker compose stop control-plane`: the pill
 turns red (UNREACHABLE) and shows the TLS error, and the LED goes red.
@@ -606,11 +648,11 @@ serial monitor prints it too.
 | `TLS ... failed: SSL - A fatal alert message was received from our peer` | The server rejected the board's certificate: not signed by the current CA, or not a client certificate. Repeat steps 1, 2 and 4. |
 | `TLS ... failed:` with no reason, or a connect or timeout message | Nothing answers on `CP_ADDRESS:8443`. Check the address, the firewall rule, and that the control plane logs `device HTTPS API listening`. |
 | `HTTP 403: device_name must match ...` | `--name` differs from the certificate's common name |
-| `cannot resolve ...` | `CP_ADDRESS` is a hostname the network does not resolve; use the IP |
+| `cannot resolve ...` | `CP_ADDRESS` is a name nothing answers for. For `name.local`, check that the PC's network is Private (Settings → Network → Wi-Fi → network profile) and that the name matches `hostname`; otherwise use the IP |
 | Colors are negatives of what they should be | Flip `cfg.invert` in `src/ui.cpp` |
 | Red and blue are swapped | Flip `cfg.rgb_order` in `src/ui.cpp` |
 | Image mirrored or upside down | Change `lcd.setRotation(0)` (0 to 3), or `cfg.offset_rotation` |
-| Taps do nothing, serial says `touch not found` | The board is the touchless ES3N28P, or the touch cable is loose. The BOOT button switches views. |
+| Taps do nothing, serial says `touch not found` | The board is the touchless ES3N28P, or the touch cable is loose. BOOT still leaves an open agent. |
 | Upload: `Unable to verify flash chip connection` | Usually a one-off right after the previous firmware reset. Run it again. If it persists, hold BOOT, tap RESET, release BOOT, and upload. |
 | No serial output | The monitor must use the board's own USB port (COM7 here). `ARDUINO_USB_CDC_ON_BOOT=1` routes `Serial` there. |
 | On the dashboard, "Ask a device" never answers | Expected: the board has no agent or model to answer with |

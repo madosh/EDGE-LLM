@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cami-fleet/control-plane/internal/model"
 	pgstore "github.com/cami-fleet/control-plane/internal/store/postgres"
 )
 
@@ -293,6 +294,91 @@ func TestDeviceAssignmentsNewestFirstWithReason(t *testing.T) {
 	}
 	if got[1].ModelID != "asg-older" || got[1].Status != "pending" {
 		t.Errorf("expected older pending second, got %s/%s", got[1].ModelID, got[1].Status)
+	}
+}
+
+func TestFleetAgentsShowsHardwareAndNewestAsk(t *testing.T) {
+	store := newStore(t)
+	ctx := context.Background()
+
+	// A label unique to this run, so the deployments below can never match
+	// devices that belong to anything else using the same database.
+	scope := map[string]string{"fleet-agents-test": pgstore.GenerateUUID()[:8]}
+	busyName := "fa-busy-" + scope["fleet-agents-test"]
+	idleName := "fa-idle-" + scope["fleet-agents-test"]
+
+	busyID, err := store.UpsertDevice(ctx, busyName, scope, "0.1.0")
+	if err != nil {
+		t.Fatalf("UpsertDevice: %v", err)
+	}
+	if err := store.UpdateDeviceCapabilities(ctx, busyID, "aarch64", "linux", 8192, []string{"cpu", "npu"}); err != nil {
+		t.Fatalf("UpdateDeviceCapabilities: %v", err)
+	}
+	if _, err := store.UpsertDevice(ctx, idleName, scope, "0.1.0"); err != nil {
+		t.Fatalf("UpsertDevice: %v", err)
+	}
+
+	older, err := store.CreateDeployment(ctx, "fa-older", "http://cp/a", "sha", scope)
+	if err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	newer, err := store.CreateDeploymentSpec(ctx, pgstore.DeploymentSpec{
+		ModelID: "fa-newer", ArtifactURL: "http://cp/b", ArtifactSHA256: "sha", TagSelector: scope,
+		Requirements: model.Requirements{MinMemMB: 16384, Accelerator: "gpu", Arch: []string{"x86_64"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateDeploymentSpec: %v", err)
+	}
+	if _, err := store.TargetDevice(ctx, older.ID, busyID, "running", ""); err != nil {
+		t.Fatalf("TargetDevice: %v", err)
+	}
+	reason := "needs 16384 MB RAM, device has 8192 MB"
+	if _, err := store.TargetDevice(ctx, newer.ID, busyID, "skipped", reason); err != nil {
+		t.Fatalf("TargetDevice: %v", err)
+	}
+
+	agents, err := store.FleetAgents(ctx, 100000)
+	if err != nil {
+		t.Fatalf("FleetAgents: %v", err)
+	}
+	byName := map[string]model.AgentView{}
+	for _, a := range agents {
+		byName[a.Name] = a
+	}
+
+	busy, ok := byName[busyName]
+	if !ok {
+		t.Fatalf("%s missing from the agent list", busyName)
+	}
+	if busy.ID != busyID || busy.Arch != "aarch64" || busy.MemTotalMB != 8192 {
+		t.Errorf("hardware not reported: %+v", busy)
+	}
+	if len(busy.Accelerators) != 2 || busy.Accelerators[1] != "npu" {
+		t.Errorf("expected accelerators [cpu npu], got %v", busy.Accelerators)
+	}
+	ask := busy.Asked
+	if ask == nil || ask.ModelID != "fa-newer" || ask.Status != model.DDSkipped || ask.Reason != reason {
+		t.Fatalf("expected the newest deployment with its skip reason, got %+v", ask)
+	}
+	if ask.Needs.MinMemMB != 16384 || ask.Needs.Accelerator != "gpu" ||
+		len(ask.Needs.Arch) != 1 || ask.Needs.Arch[0] != "x86_64" {
+		t.Errorf("requirements not carried through: %+v", ask.Needs)
+	}
+
+	idle, ok := byName[idleName]
+	if !ok {
+		t.Fatalf("%s missing from the agent list", idleName)
+	}
+	if idle.Asked != nil {
+		t.Errorf("a device no deployment targeted has no ask, got %+v", idle.Asked)
+	}
+	if idle.Accelerators == nil {
+		t.Error("accelerators must be an empty list, not null, for the display's parser")
+	}
+
+	if limited, err := store.FleetAgents(ctx, 1); err != nil || len(limited) != 1 {
+		t.Errorf("limit not applied: %d agents, err %v", len(limited), err)
 	}
 }
 

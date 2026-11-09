@@ -512,13 +512,16 @@ func (h *GRPCHandle) GracefulStop() {
 
 // Listen creates and binds the gRPC listener with mTLS. Call Serve() to start accepting.
 func Listen(addr, certDir string, srv *Server) (*GRPCHandle, error) {
-	tlsCfg, err := mtls.ServerConfig(certDir, tls.VersionTLS13)
+	rev := mtls.NewRevocations(certDir)
+	tlsCfg, err := mtls.ServerConfig(certDir, tls.VersionTLS13, rev)
 	if err != nil {
 		return nil, err
 	}
 
 	grpcSrv := ggrpc.NewServer(
 		ggrpc.Creds(credentials.NewTLS(tlsCfg)),
+		ggrpc.UnaryInterceptor(revocationUnary(rev)),
+		ggrpc.StreamInterceptor(revocationStream(rev)),
 		ggrpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle: 60 * time.Second,
 			Time:              30 * time.Second,

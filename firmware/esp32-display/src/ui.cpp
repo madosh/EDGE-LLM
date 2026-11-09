@@ -84,11 +84,32 @@ constexpr int kMargin = 10;
 constexpr int kContentWidth = LCD_WIDTH - 2 * kMargin;
 constexpr int kHeaderHeight = 32;
 constexpr int kFooterTop = LCD_HEIGHT - 24;
+constexpr int kListTop = 40;
+constexpr int kRowH = 42;
+
+bool tokenListed(const String& list, const String& item) {
+  if (item.length() == 0) return false;
+  int start = 0;
+  while (start < static_cast<int>(list.length())) {
+    int orAt = list.indexOf(" or ", start);
+    int end = orAt < 0 ? static_cast<int>(list.length()) : orAt;
+    String token = list.substring(start, end);
+    token.trim();
+    if (token.equalsIgnoreCase(item)) return true;
+    if (orAt < 0) break;
+    start = orAt + 4;
+  }
+  return false;
+}
+
+uint32_t requirementColor(bool required, bool met) {
+  if (!required) return kMuted;
+  return met ? kGreen : kRed;
+}
 
 const lgfx::IFont* const kFontTitle = &lgfx::fonts::FreeSansBold12pt7b;
 const lgfx::IFont* const kFontBold = &lgfx::fonts::FreeSansBold9pt7b;
 const lgfx::IFont* const kFontBody = &lgfx::fonts::Font2;
-const lgfx::IFont* const kFontNumber = &lgfx::fonts::Font4;
 
 uint32_t statusColor(const String& status) {
   if (status == "running") return kGreen;
@@ -149,18 +170,6 @@ void caption(const char* text, int y) {
   lcd.drawString(text, kMargin, y);
 }
 
-// A rounded box with a big number and a label under it.
-void statBox(int x, int y, int w, int h, int value, const char* label, uint32_t color) {
-  lcd.fillRoundRect(x, y, w, h, 6, kPanel);
-  lcd.setTextDatum(lgfx::textdatum_t::top_center);
-  lcd.setFont(kFontNumber);
-  lcd.setTextColor(color);
-  lcd.drawString(String(value).c_str(), x + w / 2, y + 6);
-  lcd.setFont(kFontBody);
-  lcd.setTextColor(kMuted);
-  lcd.drawString(label, x + w / 2, y + h - 20);
-}
-
 String ago(uint32_t sinceMs) {
   uint32_t s = (millis() - sinceMs) / 1000;
   if (s < 90) return String(s) + " s ago";
@@ -195,28 +204,30 @@ void Ui::splash(const char* line) {
   footerDrawn_ = "";
 }
 
-void Ui::render(const Snapshot& snap, View view) {
+void Ui::render(const Snapshot& snap, View view, int agentIndex) {
   const FleetState& st = snap.state;
-  String sig = String(static_cast<int>(view)) + "|" + static_cast<int>(snap.link) + "|" + snap.error + "|" +
-               snap.ip + "|" + st.valid + "|" + st.deviceName + "|" + st.deviceStatus + "|" + st.currentModel +
-               "|" + st.labels + "|" + st.devicesOnline + "|" + st.devicesOffline + "|" +
-               st.deploymentsActive + "|" + st.deploymentsCompleted + "|" + st.deploymentsFailed + "|" +
-               st.deploymentsRolledBack + "|" + st.assignmentCount;
-  for (int i = 0; i < st.assignmentCount; i++) {
-    sig += "|" + st.assignments[i].deploymentId + st.assignments[i].status + st.assignments[i].errorMsg;
+  String sig = String(static_cast<int>(view)) + "|" + agentIndex + "|" + static_cast<int>(snap.link) + "|" +
+               snap.error + "|" + snap.ip + "|" + st.valid + "|" + st.devicesOnline + "|" + st.devicesOffline +
+               "|" + st.agentCount;
+  for (int i = 0; i < st.agentCount; i++) {
+    const Agent& a = st.agents[i];
+    sig += "|" + a.name + a.status + a.arch + String(a.memMb) + a.accelerators + a.currentModel +
+           String(a.asked ? 1 : 0) + a.modelId + a.askStatus + a.reason + String(a.needMem) + a.needAccel + a.needArch;
   }
 
   if (sig != drawn_) {
     lcd.startWrite();
     lcd.fillScreen(kBg);
-    drawHeader(view);
-    drawLinkPill(snap);
     if (snap.link != Link::Online || !st.valid) {
+      drawHeader(View::Agents, st);
+      drawLinkPill(snap);
       drawProblem(snap);
-    } else if (view == View::Device) {
-      drawDeviceView(snap);
+    } else if (view == View::Agent) {
+      drawHeader(View::Agent, st);
+      drawAgent(snap, agentIndex);
     } else {
-      drawFleetView(snap);
+      drawHeader(View::Agents, st);
+      drawAgents(snap);
     }
     lcd.endWrite();
     drawn_ = sig;
@@ -225,17 +236,32 @@ void Ui::render(const Snapshot& snap, View view) {
   drawFooter(snap);
 }
 
-void Ui::drawHeader(View view) {
+TapAction Ui::actionAt(int x, int y, View view, int agentCount) const {
+  TapAction action;
+  if (x < 0 || x >= LCD_WIDTH || y < 0 || y >= LCD_HEIGHT) return action;
+  if (view == View::Agent) {
+    action.back = true;
+    return action;
+  }
+  if (y < kListTop) return action;
+  int row = (y - kListTop) / kRowH;
+  if (row >= 0 && row < agentCount && y < kListTop + agentCount * kRowH) action.agent = row;
+  return action;
+}
+
+void Ui::drawHeader(View view, const FleetState& state) {
   lcd.fillRect(0, 0, LCD_WIDTH, kHeaderHeight, kPanel);
   lcd.setFont(kFontBold);
   lcd.setTextDatum(lgfx::textdatum_t::middle_left);
   lcd.setTextColor(kCloud);
-  lcd.drawString("CAMI FLEET", kMargin, kHeaderHeight / 2);
-
-  // Two dots: which of the two views is showing. Tap to switch.
-  int x = LCD_WIDTH - kMargin - 22;
-  lcd.fillCircle(x, kHeaderHeight / 2, 4, view == View::Device ? kEdge : kGray);
-  lcd.fillCircle(x + 16, kHeaderHeight / 2, 4, view == View::Fleet ? kEdge : kGray);
+  if (view == View::Agent) {
+    lcd.drawString("< AGENTS", kMargin, kHeaderHeight / 2);
+    return;
+  }
+  lcd.drawString("AGENTS", kMargin, kHeaderHeight / 2);
+  lcd.setTextDatum(lgfx::textdatum_t::middle_right);
+  lcd.setTextColor(kGreen);
+  lcd.drawString((String(state.devicesOnline) + " up").c_str(), LCD_WIDTH - kMargin, kHeaderHeight / 2);
 }
 
 void Ui::drawLinkPill(const Snapshot& snap) {
@@ -296,78 +322,130 @@ void Ui::drawProblem(const Snapshot& snap) {
   }
 }
 
-void Ui::drawDeviceView(const Snapshot& snap) {
+void Ui::drawAgents(const Snapshot& snap) {
   const FleetState& st = snap.state;
-  int y = 96;
-  lcd.setTextDatum(lgfx::textdatum_t::top_left);
-  lcd.setFont(kFontTitle);
-  lcd.setTextColor(kText);
-  lcd.drawString(fit(st.deviceName, kContentWidth).c_str(), kMargin, y);
-  y += 30;
-
-  lcd.setFont(kFontBody);
-  lcd.setTextColor(kEdge);
-  y = drawWrapped(st.labels.length() > 0 ? st.labels : String("no labels"), kMargin, y, kContentWidth, 2);
-
-  y = max(y + 6, 166);
-  lcd.drawFastHLine(kMargin, y, kContentWidth, kPanel);
-  y += 8;
-  caption("NEWEST DEPLOYMENT FOR THIS DEVICE", y);
-  y += 20;
-
-  if (st.assignmentCount == 0) {
+  if (st.agentCount == 0) {
     lcd.setFont(kFontBody);
     lcd.setTextColor(kMuted);
-    drawWrapped("No deployment targets this device yet. Deploy with a selector that matches its labels.",
-                kMargin, y, kContentWidth, 4);
+    lcd.setTextDatum(lgfx::textdatum_t::top_left);
+    drawWrapped("No agents have registered yet.", kMargin, kListTop + 8, kContentWidth, 3);
     return;
   }
+  const int shown = st.agentCount;
+  for (int i = 0; i < shown; i++) {
+    const Agent& a = st.agents[i];
+    const int y = kListTop + i * kRowH;
+    lcd.fillRoundRect(kMargin, y, kContentWidth, kRowH - 4, 6, kPanel);
+    const bool up = a.status == "online";
+    lcd.fillCircle(kMargin + 14, y + (kRowH - 4) / 2, 5, up ? kGreen : kRed);
 
-  const Assignment& newest = st.assignments[0];
-  lcd.setFont(kFontTitle);
-  lcd.setTextColor(kText);
-  lcd.drawString(fit(newest.modelId, kContentWidth).c_str(), kMargin, y);
-  y += 30;
-
-  lcd.setFont(kFontBold);
-  lcd.setTextColor(statusColor(newest.status));
-  lcd.drawString(statusWord(newest.status).c_str(), kMargin, y);
-  y += 24;
-
-  if (newest.errorMsg.length() > 0) {
-    lcd.setFont(kFontBody);
+    lcd.setTextDatum(lgfx::textdatum_t::top_left);
+    lcd.setFont(kFontBold);
     lcd.setTextColor(kText);
-    y = drawWrapped(newest.errorMsg, kMargin, y, kContentWidth, 3);
-  }
-  if (st.assignmentCount > 1 && y < kFooterTop - 18) {
+    lcd.drawString(fit(a.name, kContentWidth - 36).c_str(), kMargin + 28, y + 4);
+
+    String sub = a.asked ? a.modelId : String("nothing asked yet");
+    if (a.asked) sub += "  " + statusWord(a.askStatus);
     lcd.setFont(kFontBody);
-    lcd.setTextColor(kMuted);
-    lcd.drawString((String("+") + (st.assignmentCount - 1) + " earlier deployment(s)").c_str(), kMargin,
-                   kFooterTop - 18);
+    lcd.setTextColor(a.asked ? statusColor(a.askStatus) : kMuted);
+    lcd.drawString(fit(sub, kContentWidth - 36).c_str(), kMargin + 28, y + 22);
   }
 }
 
-void Ui::drawFleetView(const Snapshot& snap) {
-  const FleetState& st = snap.state;
-  const int gap = 8;
+void Ui::drawAgent(const Snapshot& snap, int agentIndex) {
+  int y = kHeaderHeight + 10;
+  lcd.setTextDatum(lgfx::textdatum_t::top_left);
+  if (agentIndex < 0 || agentIndex >= snap.state.agentCount) {
+    lcd.setFont(kFontBody);
+    lcd.setTextColor(kMuted);
+    drawWrapped("That agent is no longer in the fleet. Tap to go back.", kMargin, y, kContentWidth, 4);
+    return;
+  }
+  const Agent& a = snap.state.agents[agentIndex];
 
-  int y = 92;
-  caption("DEVICES", y);
-  y += 20;
-  const int w3 = (kContentWidth - 2 * gap) / 3;
-  statBox(kMargin, y, w3, 62, st.devicesOnline, "online", kGreen);
-  statBox(kMargin + w3 + gap, y, w3, 62, st.devicesOffline, "offline", kRed);
-  statBox(kMargin + 2 * (w3 + gap), y, w3, 62, st.devicesOnline + st.devicesOffline, "total", kText);
-  y += 62 + 14;
+  lcd.setFont(kFontTitle);
+  lcd.setTextColor(kText);
+  lcd.drawString(fit(a.name, kContentWidth - 70).c_str(), kMargin, y);
+  lcd.setFont(kFontBold);
+  lcd.setTextColor(a.status == "online" ? kGreen : kRed);
+  lcd.setTextDatum(lgfx::textdatum_t::top_right);
+  lcd.drawString(a.status == "online" ? "UP" : "DOWN", LCD_WIDTH - kMargin, y + 4);
+  lcd.setTextDatum(lgfx::textdatum_t::top_left);
+  y += 28;
 
-  caption("DEPLOYMENTS", y);
-  y += 20;
-  const int w2 = (kContentWidth - gap) / 2;
-  statBox(kMargin, y, w2, 56, st.deploymentsActive, "in progress", kAmber);
-  statBox(kMargin + w2 + gap, y, w2, 56, st.deploymentsCompleted, "completed", kGreen);
-  y += 56 + gap;
-  statBox(kMargin, y, w2, 56, st.deploymentsFailed, "failed", kRed);
-  statBox(kMargin + w2 + gap, y, w2, 56, st.deploymentsRolledBack, "rolled back", kGray);
+  lcd.setFont(kFontBody);
+  lcd.setTextColor(kMuted);
+  String has = a.arch + "   " + a.memMb + " MB   " + a.accelerators;
+  lcd.drawString(fit(has, kContentWidth).c_str(), kMargin, y);
+  y += 18;
+  if (a.currentModel.length() > 0) {
+    lcd.setTextColor(kEdge);
+    lcd.drawString(fit(String("running ") + a.currentModel, kContentWidth).c_str(), kMargin, y);
+    y += 18;
+  }
+  if (a.live) {
+    // Simulated numbers are labelled and greyed so they never pass for real ones.
+    const bool measured = a.source == "probe";
+    String perf = String(a.tps, 1) + " tok/s   " + a.ttftMs + " ms TTFT   " +
+                  (measured ? "measured" : a.source.length() > 0 ? a.source : String("unknown"));
+    lcd.setTextColor(measured ? kGreen : kGray);
+    lcd.drawString(fit(perf, kContentWidth).c_str(), kMargin, y);
+    y += 18;
+  }
+  y += 6;
+  lcd.drawFastHLine(kMargin, y, kContentWidth, kPanel);
+  y += 8;
+
+  caption("WHAT IT WAS ASKED", y);
+  y += 18;
+  if (!a.asked) {
+    lcd.setFont(kFontBody);
+    lcd.setTextColor(kMuted);
+    drawWrapped("No deployment has targeted this agent yet.", kMargin, y, kContentWidth, 3);
+    return;
+  }
+
+  lcd.setFont(kFontBold);
+  lcd.setTextColor(kText);
+  lcd.drawString(fit(a.modelId, kContentWidth - 110).c_str(), kMargin, y);
+  lcd.setTextColor(statusColor(a.askStatus));
+  lcd.setTextDatum(lgfx::textdatum_t::top_right);
+  lcd.drawString(fit(statusWord(a.askStatus), 100).c_str(), LCD_WIDTH - kMargin, y);
+  lcd.setTextDatum(lgfx::textdatum_t::top_left);
+  y += 22;
+
+  caption("NEEDED", y);
+  y += 18;
+  auto needLine = [&](const char* label, const String& value, bool required, bool met) {
+    lcd.setFont(kFontBody);
+    lcd.setTextColor(kMuted);
+    lcd.drawString(label, kMargin, y);
+    lcd.setTextColor(requirementColor(required, met));
+    lcd.drawString(fit(value, 140).c_str(), 96, y);
+    y += 18;
+  };
+  const bool memRequired = a.needMem > 0;
+  const bool memMet = !memRequired || (a.memMb > 0 && a.memMb >= a.needMem);
+  needLine("RAM", memRequired ? String(a.needMem) + " MB" : String("any"), memRequired, memMet);
+
+  const bool accelRequired = a.needAccel.length() > 0;
+  String haveAccel = a.accelerators;
+  haveAccel.toLowerCase();
+  String wantAccel = a.needAccel;
+  wantAccel.toLowerCase();
+  const bool accelMet = !accelRequired || haveAccel.indexOf(wantAccel) >= 0;
+  needLine("Accel", accelRequired ? a.needAccel : String("any"), accelRequired, accelMet);
+
+  const bool archRequired = a.needArch.length() > 0;
+  const bool archMet = !archRequired || tokenListed(a.needArch, a.arch);
+  needLine("Arch", archRequired ? a.needArch : String("any"), archRequired, archMet);
+
+  if (a.reason.length() > 0 && y < kFooterTop - 20) {
+    y += 4;
+    lcd.setFont(kFontBody);
+    lcd.setTextColor(kText);
+    drawWrapped(a.reason, kMargin, y, kContentWidth, 3);
+  }
 }
 
 void Ui::drawFooter(const Snapshot& snap) {

@@ -170,12 +170,13 @@ type DeviceMetric struct {
 	TTFTMs   float64 `json:"ttft_ms"`
 	MemMB    float64 `json:"mem_mb"`
 	Status   string  `json:"status"`
+	Source   string  `json:"source"`
 }
 
 // QueryFleetLatest returns the most recent telemetry point per device.
 func (s *Store) QueryFleetLatest(ctx context.Context) ([]DeviceMetric, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT device_id, model_id, tps, ttft_ms, mem_mb, status
+		SELECT device_id, model_id, tps, ttft_ms, mem_mb, status, source
 		FROM telemetry
 		WHERE (device_id, ts) IN (
 			SELECT device_id, max(ts)
@@ -193,7 +194,7 @@ func (s *Store) QueryFleetLatest(ctx context.Context) ([]DeviceMetric, error) {
 	var metrics []DeviceMetric
 	for rows.Next() {
 		var m DeviceMetric
-		if err := rows.Scan(&m.DeviceID, &m.ModelID, &m.TPS, &m.TTFTMs, &m.MemMB, &m.Status); err != nil {
+		if err := rows.Scan(&m.DeviceID, &m.ModelID, &m.TPS, &m.TTFTMs, &m.MemMB, &m.Status, &m.Source); err != nil {
 			return nil, err
 		}
 		metrics = append(metrics, m)

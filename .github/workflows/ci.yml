@@ -17,6 +17,16 @@ jobs:
     defaults:
       run:
         working-directory: control-plane
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cami
+          POSTGRES_PASSWORD: cami
+          POSTGRES_DB: cami
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cami" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +62,42 @@ jobs:
 
       - name: Test
         run: GOFLAGS=-mod=mod go test -short -race -timeout 120s ./...
+
+      # Without -short: the store queries run against a real, throwaway Postgres.
+      - name: Postgres store integration tests
+        env:
+          POSTGRES_DSN: postgres://cami:cami@localhost:5432/cami?sslmode=disable
+        run: GOFLAGS=-mod=mod go test -race -timeout 120s ./internal/store/postgres/
+
+  # ── ESP32 display firmware ────────────────────────────────────────────────
+  firmware:
+    name: Firmware (ESP32 display)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware/esp32-display
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/esp32-display/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      # secrets.h is git-ignored (Wi-Fi password, device key). The template
+      # compiles; the image just cannot join a network, which CI never needs.
+      - name: Placeholder secrets
+        run: cp include/secrets.example.h include/secrets.h
+
+      - name: Build
+        run: pio run
 
   # ── Rust Agent ────────────────────────────────────────────────────────────
   rust:
@@ -142,6 +188,9 @@ jobs:
 
       - name: Run the end-to-end scenario
         run: scripts/e2e.sh
+
+      - name: Failure paths (tampered artifact, rollback, offline, revocation)
+        run: scripts/demo-failures.sh
 
       - name: Container state and logs on failure
         if: failure()

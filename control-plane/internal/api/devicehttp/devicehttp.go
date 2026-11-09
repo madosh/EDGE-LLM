@@ -23,10 +23,19 @@ import (
 	pb "github.com/cami-fleet/control-plane/gen"
 	"github.com/cami-fleet/control-plane/internal/model"
 	"github.com/cami-fleet/control-plane/internal/mtls"
+	chstore "github.com/cami-fleet/control-plane/internal/store/clickhouse"
 )
 
 // assignmentsLimit is how many of its newest deployments a device sees.
 const assignmentsLimit = 5
+
+// agentsLimit is how many fleet members the status display lists. Running
+// agents come first, so a full fleet still shows who is up.
+const agentsLimit = 6
+
+// displayType is the device label that may read the fleet list. Other
+// devices still receive only their own record and the counts.
+const displayType = "esp32-display"
 
 // Devices is the device-facing logic of the gRPC server, called with the
 // caller taken from this listener's TLS state.
@@ -44,17 +53,25 @@ type Store interface {
 	DeviceAssignments(ctx context.Context, deviceID string, limit int) ([]model.Assignment, error)
 	CountDevicesByStatus(ctx context.Context) (map[string]int, error)
 	CountDeploymentsByStatus(ctx context.Context) (map[string]int, error)
+	FleetAgents(ctx context.Context, limit int) ([]model.AgentView, error)
+}
+
+// Telemetry is the slice of the ClickHouse store that adds live inference
+// numbers to the fleet list.
+type Telemetry interface {
+	QueryFleetLatest(ctx context.Context) ([]chstore.DeviceMetric, error)
 }
 
 type handler struct {
-	devices Devices
-	store   Store
+	devices   Devices
+	store     Store
+	telemetry Telemetry
 }
 
 // NewHandler returns the device API routes. Every route requires a verified
-// client certificate.
-func NewHandler(devices Devices, store Store) http.Handler {
-	h := &handler{devices: devices, store: store}
+// client certificate. telemetry may be nil; agents then have no live numbers.
+func NewHandler(devices Devices, store Store, telemetry Telemetry) http.Handler {
+	h := &handler{devices: devices, store: store, telemetry: telemetry}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /device/v1/register", h.register)
 	mux.HandleFunc("POST /device/v1/heartbeat", h.heartbeat)
@@ -67,14 +84,25 @@ func NewHandler(devices Devices, store Store) http.Handler {
 // unlike the gRPC listener's TLS 1.3, because that is what microcontroller
 // TLS stacks (mbedTLS on the ESP32) negotiate. Start it with
 // ListenAndServeTLS("", "").
+//
+// Revoked certificates are refused at the handshake and, for a kept-alive
+// connection opened before the revocation, on every request.
 func NewServer(addr, certDir string, h http.Handler) (*http.Server, error) {
-	tlsCfg, err := mtls.ServerConfig(certDir, tls.VersionTLS12)
+	rev := mtls.NewRevocations(certDir)
+	tlsCfg, err := mtls.ServerConfig(certDir, tls.VersionTLS12, rev)
 	if err != nil {
 		return nil, err
 	}
+	checked := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rev.Revoked(mtls.PeerCertificate(r.TLS)) {
+			http.Error(w, "client certificate is revoked", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 	return &http.Server{
 		Addr:              addr,
-		Handler:           h,
+		Handler:           checked,
 		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -129,10 +157,11 @@ type stateResponse struct {
 	Device       *model.Device      `json:"device"`
 	Assignments  []model.Assignment `json:"assignments"`
 	Fleet        fleetCounts        `json:"fleet"`
+	// Agents is set only for the status display. Empty for every other device.
+	Agents []model.AgentView `json:"agents"`
 }
 
-// fleetCounts is everything a device learns about the rest of the fleet:
-// how many devices and deployments are in each status, never which ones.
+// fleetCounts is how many devices and deployments are in each status.
 type fleetCounts struct {
 	Devices     map[string]int `json:"devices"`
 	Deployments map[string]int `json:"deployments"`
@@ -196,7 +225,8 @@ func (h *handler) ack(w http.ResponseWriter, r *http.Request) {
 }
 
 // state is what a polling device shows: its own record, its newest
-// deployments with its status on each, and fleet-wide counts. It reconciles
+// deployments with its status on each, and fleet-wide counts. A device
+// labeled type=esp32-display also receives one card per agent. It reconciles
 // first, so a deployment created while the device was away applies to it
 // (or is recorded as skipped, with the reason) before it is read back.
 func (h *handler) state(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +267,39 @@ func (h *handler) state(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Warn().Err(err).Msg("device state: count deployments failed")
 	}
+	resp.Agents = []model.AgentView{}
+	if device.Labels["type"] == displayType {
+		agents, err := h.store.FleetAgents(ctx, agentsLimit)
+		if err != nil {
+			log.Warn().Err(err).Msg("device state: list agents failed")
+		} else if agents != nil {
+			h.addLive(ctx, agents)
+			resp.Agents = agents
+		}
+	}
 	writeJSON(w, resp)
+}
+
+// addLive attaches each agent's latest telemetry sample. A ClickHouse outage
+// only costs the numbers; the list itself still renders.
+func (h *handler) addLive(ctx context.Context, agents []model.AgentView) {
+	if h.telemetry == nil {
+		return
+	}
+	latest, err := h.telemetry.QueryFleetLatest(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("device state: latest telemetry failed")
+		return
+	}
+	byDevice := make(map[string]chstore.DeviceMetric, len(latest))
+	for _, m := range latest {
+		byDevice[m.DeviceID] = m
+	}
+	for i := range agents {
+		if m, ok := byDevice[agents[i].ID]; ok && m.Status == "running" {
+			agents[i].Live = &model.AgentLive{TPS: m.TPS, TTFTMs: m.TTFTMs, Source: m.Source}
+		}
+	}
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

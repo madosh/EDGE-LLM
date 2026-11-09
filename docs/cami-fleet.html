@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cami Fleet — how it works, including the ESP32 display</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0b1020;
+    --surface: #141b2d;
+    --surface-2: #192134;
+    --line: #26324b;
+    --text: #e6e9f0;
+    --muted: #94a3b8;
+    --faint: #64748b;
+    --cloud: #38bdf8;
+    --edge: #f97316;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --radius: 16px;
+    --mx: min(1080px, calc(100% - 40px));
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 50% -200px, rgba(56,189,248,.10), transparent 70%),
+      var(--bg);
+    color: var(--text);
+    font: 400 16px/1.6 "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--cloud); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: .9em; color: #cbd5e1; }
+  em { font-style: normal; color: var(--text); }
+
+  /* layout */
+  .wrap { width: var(--mx); margin: 0 auto; }
+  header.top {
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    background: rgba(11,16,32,.72);
+    z-index: 10;
+  }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
+  .brand .mark { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--cloud), var(--edge)); }
+  .top nav { display: flex; gap: 22px; }
+  .top nav a { color: var(--muted); font-size: 14px; }
+  .top nav a:hover { color: var(--text); text-decoration: none; }
+  @media (max-width: 680px) { .top nav { display: none; } }
+
+  /* hero */
+  .hero { padding: 72px 0 40px; }
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--edge);
+    border: 1px solid rgba(249,115,22,.35);
+    background: rgba(249,115,22,.08);
+    border-radius: 999px;
+    padding: 5px 12px;
+    margin-bottom: 20px;
+  }
+  h1 {
+    font-size: clamp(2.1rem, 5.2vw, 3.4rem);
+    line-height: 1.08;
+    letter-spacing: -.025em;
+    font-weight: 700;
+    margin: 0 0 18px;
+    max-width: 18ch;
+  }
+  h1 .accent { color: var(--cloud); }
+  .lede { max-width: 64ch; color: var(--muted); font-size: 1.15rem; margin: 0 0 28px; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+  }
+  .btn.primary { background: var(--cloud); color: #04222f; border-color: transparent; font-weight: 600; }
+  .btn:hover { text-decoration: none; border-color: var(--cloud); }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 40px; }
+  .stat {
+    flex: 1 1 160px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+  }
+  .stat b { display: block; font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; }
+  .stat span { color: var(--muted); font-size: 13px; }
+
+  /* sections */
+  section { padding: 52px 0; border-top: 1px solid var(--line); }
+  .sec-head { max-width: 62ch; margin-bottom: 26px; }
+  .sec-head h2 { font-size: 1.7rem; letter-spacing: -.02em; margin: 0 0 8px; }
+  .sec-head p { color: var(--muted); margin: 0; }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .mermaid { display: flex; justify-content: center; }
+  .mermaid svg { max-width: 100%; height: auto; }
+
+  /* step cards */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    position: relative;
+  }
+  .step .n {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: grid; place-items: center;
+    background: var(--surface-2); color: var(--cloud);
+    font-size: 13px; font-weight: 600; margin-bottom: 12px;
+  }
+  .step h3 { font-size: 1rem; margin: 0 0 6px; }
+  .step p { color: var(--muted); font-size: 14px; margin: 0; }
+  @media (max-width: 860px) { .steps { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 480px) { .steps { grid-template-columns: 1fr; } }
+
+  /* feature grid */
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .feature .tag {
+    display: inline-block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--bg); background: var(--cloud); border-radius: 999px; padding: 3px 10px; margin-bottom: 12px; font-weight: 600;
+  }
+  .feature .tag.edge { background: var(--edge); }
+  .feature .tag.green { background: var(--green); }
+  .feature .tag.amber { background: var(--amber); color: #2a1c02; }
+  .feature h3 { font-size: 1.05rem; margin: 0 0 8px; }
+  .feature p { color: var(--muted); font-size: 14px; margin: 0; }
+  @media (max-width: 760px) { .features { grid-template-columns: 1fr; } }
+
+  /* display section */
+  .display-grid { display: grid; grid-template-columns: 260px 260px 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 920px) { .display-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 620px) { .display-grid { grid-template-columns: 1fr; } }
+  .device figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; text-align: center; }
+  .phone {
+    width: 240px; height: 320px; margin: 0 auto;
+    background: var(--bg);
+    border: 9px solid #090d17;
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4), 0 0 0 1px var(--line);
+    overflow: hidden; position: relative;
+  }
+  .scr-bar {
+    height: 32px; background: var(--surface-2);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 11px; font-size: 13px; font-weight: 650; color: var(--cloud);
+  }
+  .scr-bar .up { color: var(--green); font-size: 12px; }
+  .row {
+    margin: 8px 10px 0; background: var(--surface-2); border-radius: 9px;
+    padding: 7px 8px 7px 28px; position: relative; min-height: 38px;
+  }
+  .row .dot { position: absolute; left: 10px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
+  .row .dot.off { background: var(--red); }
+  .row b { display: block; font-size: 13px; }
+  .row small { display: block; font-size: 11px; color: var(--amber); }
+  .row small.idle { color: var(--faint); }
+  .scr-foot {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 24px; background: var(--surface-2);
+    color: var(--faint); font-size: 11px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px;
+  }
+  .detail { padding: 11px 12px; font-size: 13px; }
+  .detail .dh { display: flex; justify-content: space-between; font-weight: 650; }
+  .detail .dh em { color: var(--green); font-size: 12px; }
+  .detail .sub { color: var(--muted); font-size: 12px; margin: 3px 0 8px; }
+  .detail .hr { height: 1px; background: var(--line); margin: 8px 0; }
+  .detail .cap { color: var(--faint); font-size: 11px; letter-spacing: .06em; }
+  .detail .kv { display: flex; justify-content: space-between; margin: 5px 0; }
+  .detail .kv .ok { color: var(--green); font-weight: 600; }
+  .detail .kv .no { color: var(--red); font-weight: 600; }
+  .detail .kv .model { font-weight: 650; }
+  .detail .kv .skip { color: var(--faint); font-weight: 600; }
+  .detail .reason { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .read p { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .read p:last-child { margin: 0; }
+  .read b { color: var(--text); }
+
+  /* table */
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  thead th { text-align: left; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 0 14px 10px; }
+  tbody td { padding: 13px 14px; border-top: 1px solid var(--line); font-size: 14px; vertical-align: top; width: 50%; }
+  tbody tr td:first-child { color: var(--text); }
+  tbody tr td:last-child { color: var(--muted); }
+  .check { color: var(--green); margin-right: 8px; font-weight: 700; }
+  .cross { color: var(--faint); margin-right: 8px; font-weight: 700; }
+  .tbl-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 8px; }
+
+  .ports { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .ports .p { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px; font-size: 14px; }
+  .ports .p b { color: var(--cloud); }
+
+  footer.foot { border-top: 1px solid var(--line); padding: 32px 0 56px; color: var(--muted); font-size: 14px; }
+  footer.foot a { color: var(--cloud); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="mark"></span> Cami Fleet</div>
+    <nav>
+      <a href="#flow">How a model travels</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#display">The display</a>
+      <a href="#limits">Limits</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero" style="border-top:none">
+    <span class="eyebrow">Edge AI deployment · with a screen on the desk</span>
+    <h1>Models go to the device. The <span class="accent">screen shows who is up.</span></h1>
+    <p class="lede">
+      Cami Fleet deploys an AI model to the machines you choose by label, verifies every byte against a
+      SHA-256 fingerprint before it runs, and tracks each device by its own certificate. A 2.8-inch
+      ESP32-S3 touch board joins the same fleet and lists the live agents — tap one to see exactly what
+      its latest deployment required, and whether it qualified.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#display">See the display</a>
+      <a class="btn" href="#architecture">How it fits together</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>4</b><span>services: REST, gRPC, device HTTPS, dashboard</span></div>
+      <div class="stat"><b>mTLS</b><span>every device has its own certificate</span></div>
+      <div class="stat"><b>SHA-256</b><span>verified before load, and on every reuse</span></div>
+      <div class="stat"><b>5 s</b><span>the display's refresh for live fleet state</span></div>
+    </div>
+  </section>
+
+  <section id="flow">
+    <div class="sec-head">
+      <h2>How a model travels</h2>
+      <p>You choose the model and the labels. The control plane decides who qualifies. The device runs the file only after the hash matches. The display watches it all happen.</p>
+    </div>
+    <div class="steps">
+      <article class="step">
+        <div class="n">1</div>
+        <h3>You choose</h3>
+        <p>A model, a label like <em>location = barcelona</em>, and optional requirements: RAM, a CPU / GPU / NPU, or an architecture.</p>
+      </article>
+      <article class="step">
+        <div class="n">2</div>
+        <h3>Targeting</h3>
+        <p>Every matching device is recorded. One that lacks the RAM or the chip is skipped <em>with the reason</em>, not failed at load time.</p>
+      </article>
+      <article class="step">
+        <div class="n">3</div>
+        <h3>The agent</h3>
+        <p>The Rust agent downloads the file, keeps it only if the SHA-256 matches, and loads that exact file into LiteRT-LM, Ollama, or the stub.</p>
+      </article>
+      <article class="step">
+        <div class="n">4</div>
+        <h3>The display</h3>
+        <p>The ESP32 polls every 5 seconds. Each row shows the agent and its deployment; a tap shows what it needed and whether it has it.</p>
+      </article>
+    </div>
+
+    <div class="panel" style="margin-top:22px">
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor You as Operator
+    participant CP as Control plane
+    participant A as Rust agent
+    participant D as ESP32 display
+    You->>CP: Deploy model to location=barcelona (min 2 GB, gpu)
+    CP->>CP: Match labels, check requirements
+    CP-->>You: targeted / skipped (with reason)
+    CP->>A: Desired state over gRPC (mTLS, TLS 1.3)
+    A->>A: Download, verify SHA-256, load exact file
+    A-->>CP: downloading → verifying → running
+    loop every 5 s
+        D->>CP: GET /state over HTTPS (mTLS, TLS 1.2+)
+        CP-->>D: agents, status, what each was asked
+    end
+      </pre>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="sec-head">
+      <h2>The pieces</h2>
+      <p>Agents speak gRPC. The display can't, so it uses the same identity checks over a smaller HTTPS API. Both dial out — neither needs an open port on the device.</p>
+    </div>
+    <div class="panel">
+      <pre class="mermaid">
+flowchart TB
+    subgraph OPS["Operator"]
+        BROWSER["Browser"]
+        WEB["Dashboard :5173<br/>adds API key"]
+    end
+    subgraph CPLANE["Control plane · Go"]
+        REST["REST :8080<br/>deploy · promote · rollback · ask"]
+        FLEET["Targeting<br/>labels · rollout % · requirements"]
+        GRPC["gRPC :9090 · TLS 1.3"]
+        DHTTP["Device HTTPS :8443 · TLS 1.2+"]
+    end
+    subgraph STATE["State"]
+        PG[("Postgres<br/>devices · deployments")]
+        CH[("ClickHouse<br/>telemetry")]
+        NATS{{"NATS<br/>events"}}
+    end
+    subgraph EDGE["At the edge"]
+        AGENT["Rust agents<br/>own certificate · run the model"]
+        ESP["ESP32-S3 display<br/>own certificate · shows the fleet"]
+    end
+    BROWSER --> WEB --> REST
+    REST --> FLEET
+    FLEET --> GRPC
+    REST --> PG
+    REST <-.-> NATS
+    GRPC --> PG
+    GRPC --> CH
+    DHTTP --> PG
+    GRPC <--> AGENT
+    DHTTP <--> ESP
+    classDef ops fill:#0f1a2e,stroke:#38bdf8,color:#e6e9f0;
+    classDef cloud fill:#0f1a2e,stroke:#38bdf8,color:#e6e9f0;
+    classDef store fill:#0c1a12,stroke:#22c55e,color:#dcfce7;
+    classDef edge fill:#1f1408,stroke:#f97316,color:#ffedd5;
+    class BROWSER,WEB ops;
+    class REST,FLEET,GRPC,DHTTP cloud;
+    class PG,CH,NATS store;
+    class AGENT,ESP edge;
+      </pre>
+    </div>
+
+    <div class="features">
+      <article class="feature">
+        <span class="tag">Operator</span>
+        <h3>Dashboard and API</h3>
+        <p>The web app adds the API key on its own server, so the browser never holds it. Deployments can start as a canary percentage, then promote to everyone or roll back — rollback returns each device to the model it ran before.</p>
+      </article>
+      <article class="feature">
+        <span class="tag green">Identity</span>
+        <h3>The certificate is the name</h3>
+        <p>Each device carries its own client certificate. The control plane reads the caller's name from that certificate, never from the request body, so one device cannot register or heartbeat as another.</p>
+      </article>
+      <article class="feature">
+        <span class="tag">On the device</span>
+        <h3>Verified, then run</h3>
+        <p>The agent hashes the download as it streams and discards the file if the digest differs; a cached file is re-hashed before each use. Inference happens on the device. “Ask a device” may first call three read-only tools: status, cached models, current model.</p>
+      </article>
+      <article class="feature">
+        <span class="tag amber">On the desk</span>
+        <h3>Why the display is separate</h3>
+        <p>The agent needs HTTP/2, protobuf, and TLS 1.3. This ESP32's TLS stack stops at TLS 1.2, and a screen gains nothing from a long-lived stream. Port 8443 runs the same register / heartbeat / ack / reconcile logic as JSON, and the board verifies the certificate name <code>control-plane</code>.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="display">
+    <div class="sec-head">
+      <h2>The ESP32 display</h2>
+      <p>A diymore / LCDWIKI ESP32-S3 with a 240×320 ILI9341 screen and an FT6336 touch panel. It registers as <em>esp32-display-1</em>, heartbeats every 10 seconds, and is labeled <em>type = esp32-display</em> — only a device with that label receives the agent list (up to six members, running ones first).</p>
+    </div>
+
+    <div class="display-grid">
+      <figure class="device" style="margin:0">
+        <div class="phone" aria-label="Agent list on the display">
+          <div class="scr-bar">AGENTS <span class="up">2 up</span></div>
+          <div class="row"><span class="dot"></span><b>device-barcelona-1</b><small>gemma · SKIPPED</small></div>
+          <div class="row"><span class="dot"></span><b>device-barcelona-2</b><small class="idle">nothing asked yet</small></div>
+          <div class="row"><span class="dot off"></span><b>esp32-display-1</b><small class="idle">nothing asked yet</small></div>
+          <div class="scr-foot"><span>heartbeat 4 s ago</span><span>−52 dBm</span></div>
+        </div>
+        <figcaption>The list. Green is up, red is down.</figcaption>
+      </figure>
+
+      <figure class="device" style="margin:0">
+        <div class="phone" aria-label="Requirement detail after a tap">
+          <div class="scr-bar">&lt; AGENTS</div>
+          <div class="detail">
+            <div class="dh">device-barcelona-1 <em>UP</em></div>
+            <div class="sub">x86_64 · 6740 MB · cpu</div>
+            <div class="hr"></div>
+            <div class="cap">WHAT IT WAS ASKED</div>
+            <div class="kv"><span class="model">gemma</span><span class="skip">SKIPPED</span></div>
+            <div class="cap">NEEDED</div>
+            <div class="kv"><span>RAM</span><span class="ok">2048 MB</span></div>
+            <div class="kv"><span>Accel</span><span class="no">gpu</span></div>
+            <div class="kv"><span>Arch</span><span class="ok">any</span></div>
+            <div class="reason">needs gpu accelerator, device has cpu</div>
+          </div>
+          <div class="scr-foot"><span>heartbeat 4 s ago</span><span>−52 dBm</span></div>
+        </div>
+        <figcaption>After a tap. Red is what the agent lacks.</figcaption>
+      </figure>
+
+      <div class="read">
+        <p><b>The header</b> counts how many agents are up. Each row is the agent's newest deployment and its status, or “nothing asked yet.”</p>
+        <p><b>A tap</b> opens that agent: its architecture, RAM, accelerators, and the model it runs, then the three requirements — green when met, red when not — with the skip or failure sentence underneath.</p>
+        <p><b>To go back,</b> tap anywhere on the detail screen, or press BOOT. BOOT can't choose a row.</p>
+        <p><b>Before it's online,</b> the list is replaced by a status pill: amber while joining Wi-Fi or registering, red when the control plane doesn't answer. The RGB LED mirrors it — blue, green, red.</p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:24px">
+      <pre class="mermaid">
+stateDiagram-v2
+    direction LR
+    [*] --> Connecting
+    Connecting --> Registering: Wi-Fi joined
+    Registering --> AgentList: certificate accepted
+    AgentList --> AgentDetail: tap a row
+    AgentDetail --> AgentList: tap / BOOT
+    AgentList --> Unreachable: control plane silent
+    Unreachable --> AgentList: next poll succeeds
+    note right of AgentList
+        polls /state every 5 s
+    end note
+      </pre>
+    </div>
+  </section>
+
+  <section id="limits">
+    <div class="sec-head">
+      <h2>What the display will and won't do</h2>
+      <p>It's a fleet member so you can watch the decisions on the desk — not an inference device. A model needs gigabytes of RAM; this board has 512 KB of on-chip SRAM.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>It does</th><th>It does not</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check">✓</span>Register under its certificate name and heartbeat like an agent</td>
+            <td><span class="cross">✕</span>Run LiteRT-LM, Ollama, or any model</td>
+          </tr>
+          <tr>
+            <td><span class="check">✓</span>List who is up, and what the newest deployment required</td>
+            <td><span class="cross">✕</span>Show artifact URLs, private keys, or another device's certificate</td>
+          </tr>
+          <tr>
+            <td><span class="check">✓</span>Report <em>failed</em> if a deployment targets the board, so the rollout isn't left waiting</td>
+            <td><span class="cross">✕</span>Answer “Ask a device” — those tasks stay pending</td>
+          </tr>
+          <tr>
+            <td><span class="check">✓</span>Get skipped, with a reason, when a model needs more RAM, a GPU / NPU, or another architecture</td>
+            <td><span class="cross">✕</span>Hold a deployment open</td>
+          </tr>
+          <tr>
+            <td><span class="check">✓</span>Go offline on the dashboard ~30 s after its last heartbeat</td>
+            <td><span class="cross">✕</span>Stream token timings — there's nothing to measure</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ports">
+      <span class="p"><b>:5173</b> &nbsp;dashboard</span>
+      <span class="p"><b>:8080</b> &nbsp;operator API</span>
+      <span class="p"><b>:9090</b> &nbsp;agents · gRPC</span>
+      <span class="p"><b>:8443</b> &nbsp;display · HTTPS</span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    More in this repo: <a href="esp32-display.md">the ESP32 technical guide</a> ·
+    <a href="architecture.html">the component architecture</a>.
+    Firmware in <code>firmware/esp32-display</code>; the display API in <code>control-plane/internal/api/devicehttp</code>.
+  </div>
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      darkMode: true,
+      fontFamily: 'Inter, Segoe UI, system-ui, sans-serif',
+      background: '#141b2d',
+      primaryColor: '#192134',
+      primaryTextColor: '#e6e9f0',
+      primaryBorderColor: '#26324b',
+      lineColor: '#38bdf8',
+      secondaryColor: '#1f1408',
+      tertiaryColor: '#0c1a12',
+      clusterBkg: 'rgba(56,189,248,0.04)',
+      clusterBorder: '#26324b',
+      titleColor: '#e6e9f0',
+      actorBkg: '#192134',
+      actorBorder: '#38bdf8',
+      actorTextColor: '#e6e9f0',
+      actorLineColor: '#64748b',
+      signalColor: '#94a3b8',
+      signalTextColor: '#cbd5e1',
+      noteBkgColor: '#1f1408',
+      noteTextColor: '#ffedd5',
+      noteBorderColor: '#f97316',
+      labelBoxBkgColor: '#192134',
+      labelBoxBorderColor: '#26324b',
+      edgeLabelBackground: '#141b2d'
+    }
+  });
+</script>
+</body>
+</html>

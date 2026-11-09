@@ -100,7 +100,7 @@ func main() {
 	// ── Device HTTPS API (for devices too small for gRPC) ─────────────────────
 	var deviceSrv *http.Server
 	if cfg.DeviceHTTPSPort != "off" {
-		deviceSrv, err = devicehttp.NewServer(":"+cfg.DeviceHTTPSPort, cfg.CertDir, devicehttp.NewHandler(grpcSrv, pg))
+		deviceSrv, err = devicehttp.NewServer(":"+cfg.DeviceHTTPSPort, cfg.CertDir, devicehttp.NewHandler(grpcSrv, pg, ch))
 		if err != nil {
 			log.Fatal().Err(err).Msg("device https listen failed")
 		}

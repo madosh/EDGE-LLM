@@ -2,12 +2,10 @@
 
 Turns the 2.8" ESP32-S3 touch board (LCDWIKI ES3C28P, sold by diymore as a
 "Xiaozhi" display) into a fleet device. It registers with its own
-certificate, sends heartbeats, and shows on its screen what the control plane
-decided for it: which deployment, and why it was skipped or failed. Tap the
-screen to see fleet-wide counts.
-
-The board cannot run a model. It talks to the control plane's device HTTPS
-API (`:8443`, mutual TLS) instead of gRPC.
+certificate, sends heartbeats, and shows a live list of the agents that are
+up. Tap one to see what its newest deployment needed, and whether that agent
+has it. The board cannot run a model. It talks to the control plane's device
+HTTPS API (`:8443`, mutual TLS) instead of gRPC.
 
 **Full technical guide, including setup, protocol, design, demo script and
 troubleshooting: [docs/esp32-display.md](../../docs/esp32-display.md).**

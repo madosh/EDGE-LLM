@@ -202,7 +202,8 @@ void showLink(Link link) {
 
 Ui ui;
 TapSensor taps;
-View view = View::Device;
+View view = View::Agents;
+String openAgent;  // name of the agent whose requirements are on screen
 
 bool bootButtonPressed() {
   static bool wasDown = false;
@@ -233,11 +234,30 @@ void setup() {
 }
 
 void loop() {
-  if (taps.tapped() || bootButtonPressed()) {
-    view = view == View::Device ? View::Fleet : View::Device;
-  }
   Snapshot snap = read();
+  int x = 0;
+  int y = 0;
+  if (taps.take(x, y)) {
+    Serial.printf("[touch] %d,%d\n", x, y);
+    if (view == View::Agent) {
+      view = View::Agents;
+    } else if (snap.link == Link::Online && snap.state.valid) {
+      TapAction hit = ui.actionAt(x, y, view, snap.state.agentCount);
+      if (hit.agent >= 0 && hit.agent < snap.state.agentCount) {
+        openAgent = snap.state.agents[hit.agent].name;
+        view = View::Agent;
+      }
+    }
+  }
+  if (bootButtonPressed() && view == View::Agent) view = View::Agents;
+
+  int agentIndex = -1;
+  if (view == View::Agent) {
+    for (int i = 0; i < snap.state.agentCount; i++) {
+      if (snap.state.agents[i].name == openAgent) agentIndex = i;
+    }
+  }
   showLink(snap.link);
-  ui.render(snap, view);
+  ui.render(snap, view, agentIndex);
   delay(50);
 }

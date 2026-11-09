@@ -23,6 +23,14 @@ RUN mkdir -p gen && \
 RUN GOFLAGS=-mod=mod go mod tidy
 RUN GOFLAGS=-mod=mod CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /server ./cmd/server
 
+# ── load generator (opt-in: `docker compose --profile loadtest`) ─────────────
+FROM builder AS loadgen-build
+RUN GOFLAGS=-mod=mod CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /loadgen ./cmd/loadgen
+
+FROM gcr.io/distroless/static-debian12:nonroot AS loadgen
+COPY --from=loadgen-build /loadgen /loadgen
+ENTRYPOINT ["/loadgen"]
+
 # ── runtime ──────────────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot
 

@@ -27,6 +27,7 @@ import (
 	"github.com/cami-fleet/control-plane/internal/api/devicehttp"
 	grpcapi "github.com/cami-fleet/control-plane/internal/api/grpc"
 	"github.com/cami-fleet/control-plane/internal/model"
+	chstore "github.com/cami-fleet/control-plane/internal/store/clickhouse"
 )
 
 // fakeDevices records the caller each call was made as. It owns one device,
@@ -71,10 +72,17 @@ func (f *fakeDevices) Authorize(_ context.Context, _, caller, deviceID string) e
 
 func (f *fakeDevices) Reconcile(context.Context, string) { f.reconciled = true }
 
-type fakeStore struct{ devices *fakeDevices }
+type fakeStore struct {
+	devices *fakeDevices
+	labels  map[string]string
+}
 
 func (s fakeStore) GetDevice(_ context.Context, id string) (*model.Device, error) {
-	return &model.Device{ID: id, Name: "esp32-display-1", Status: model.StatusOnline}, nil
+	labels := s.labels
+	if labels == nil {
+		labels = map[string]string{"type": "esp32-display"}
+	}
+	return &model.Device{ID: id, Name: "esp32-display-1", Status: model.StatusOnline, Labels: labels}, nil
 }
 
 func (s fakeStore) DeviceAssignments(context.Context, string, int) ([]model.Assignment, error) {
@@ -94,6 +102,32 @@ func (s fakeStore) CountDeploymentsByStatus(context.Context) (map[string]int, er
 	return map[string]int{"completed": 2}, nil
 }
 
+func (s fakeStore) FleetAgents(context.Context, int) ([]model.AgentView, error) {
+	return []model.AgentView{{
+		ID:           "dev-b1",
+		Name:         "device-barcelona-1",
+		Status:       model.StatusOnline,
+		Arch:         "x86_64",
+		MemTotalMB:   6740,
+		Accelerators: []string{"cpu"},
+		Asked: &model.AgentAsk{
+			ModelID: "gemma",
+			Status:  model.DDSkipped,
+			Reason:  "needs gpu accelerator, device has cpu",
+			Needs:   model.Requirements{MinMemMB: 2048, Accelerator: "gpu", Arch: []string{"aarch64"}},
+		},
+	}}, nil
+}
+
+type fakeTelemetry struct{}
+
+func (fakeTelemetry) QueryFleetLatest(context.Context) ([]chstore.DeviceMetric, error) {
+	return []chstore.DeviceMetric{
+		{DeviceID: "dev-b1", TPS: 62.6, TTFTMs: 44, Status: "running", Source: "probe"},
+		{DeviceID: "not-listed", TPS: 1, Status: "running", Source: "stub"},
+	}, nil
+}
+
 // withCert makes a request look like it arrived on a connection whose
 // verified client certificate has the given common name.
 func withCert(r *http.Request, cn string) *http.Request {
@@ -109,7 +143,7 @@ func serve(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 }
 
 func TestRequiresClientCertificate(t *testing.T) {
-	h := devicehttp.NewHandler(&fakeDevices{}, nil)
+	h := devicehttp.NewHandler(&fakeDevices{}, nil, nil)
 	w := serve(h, httptest.NewRequest(http.MethodGet, "/device/v1/state?device_id=dev-1", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without a client certificate, got %d", w.Code)
@@ -119,7 +153,7 @@ func TestRequiresClientCertificate(t *testing.T) {
 func TestRegisterUnderAnotherNameIsForbidden(t *testing.T) {
 	// The real gRPC server's checks, reached over HTTP. It needs no database
 	// to reject a name that differs from the certificate.
-	h := devicehttp.NewHandler(grpcapi.NewServer(nil, nil, nil), nil)
+	h := devicehttp.NewHandler(grpcapi.NewServer(nil, nil, nil), nil, nil)
 	body := `{"device_name":"device-barcelona-1","labels":{}}`
 	r := withCert(httptest.NewRequest(http.MethodPost, "/device/v1/register", strings.NewReader(body)), "esp32-display-1")
 	if w := serve(h, r); w.Code != http.StatusForbidden {
@@ -129,7 +163,7 @@ func TestRegisterUnderAnotherNameIsForbidden(t *testing.T) {
 
 func TestHeartbeatForAnotherDeviceIsForbidden(t *testing.T) {
 	devices := &fakeDevices{}
-	h := devicehttp.NewHandler(devices, nil)
+	h := devicehttp.NewHandler(devices, nil, nil)
 	r := withCert(httptest.NewRequest(http.MethodPost, "/device/v1/heartbeat",
 		strings.NewReader(`{"device_id":"dev-1"}`)), "device-barcelona-2")
 	if w := serve(h, r); w.Code != http.StatusForbidden {
@@ -141,7 +175,7 @@ func TestHeartbeatForAnotherDeviceIsForbidden(t *testing.T) {
 }
 
 func TestAckRejectsStatusDevicesCannotReport(t *testing.T) {
-	h := devicehttp.NewHandler(&fakeDevices{}, nil)
+	h := devicehttp.NewHandler(&fakeDevices{}, nil, nil)
 	body := `{"deployment_id":"dep-1","device_id":"dev-1","status":"skipped"}`
 	r := withCert(httptest.NewRequest(http.MethodPost, "/device/v1/ack", strings.NewReader(body)), "esp32-display-1")
 	if w := serve(h, r); w.Code != http.StatusBadRequest {
@@ -151,7 +185,7 @@ func TestAckRejectsStatusDevicesCannotReport(t *testing.T) {
 
 func TestStateReconcilesThenReportsAssignmentsAndCounts(t *testing.T) {
 	devices := &fakeDevices{}
-	h := devicehttp.NewHandler(devices, fakeStore{devices: devices})
+	h := devicehttp.NewHandler(devices, fakeStore{devices: devices}, fakeTelemetry{})
 	r := withCert(httptest.NewRequest(http.MethodGet, "/device/v1/state?device_id=dev-1", nil), "esp32-display-1")
 	w := serve(h, r)
 	if w.Code != http.StatusOK {
@@ -176,11 +210,52 @@ func TestStateReconcilesThenReportsAssignmentsAndCounts(t *testing.T) {
 	if got.Fleet.Devices["online"] != 3 {
 		t.Fatalf("expected fleet counts, got %v", got.Fleet.Devices)
 	}
+	var body struct {
+		Agents []model.AgentView `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Agents) != 1 || body.Agents[0].Name != "device-barcelona-1" {
+		t.Fatalf("expected the running agent, got %+v", body.Agents)
+	}
+	if body.Agents[0].Asked == nil || body.Agents[0].Asked.Needs.Accelerator != "gpu" {
+		t.Fatalf("expected what the agent was asked for, got %+v", body.Agents[0].Asked)
+	}
+	live := body.Agents[0].Live
+	if live == nil || live.TPS != 62.6 || live.Source != "probe" {
+		t.Fatalf("expected the agent's measured telemetry, got %+v", live)
+	}
+	if strings.Contains(w.Body.String(), "dev-b1") {
+		t.Fatal("internal device IDs must not reach the display")
+	}
+}
+
+func TestStateHidesAgentsFromOtherDevices(t *testing.T) {
+	devices := &fakeDevices{}
+	h := devicehttp.NewHandler(devices, fakeStore{
+		devices: devices,
+		labels:  map[string]string{"type": "jetson-orin"},
+	}, fakeTelemetry{})
+	r := withCert(httptest.NewRequest(http.MethodGet, "/device/v1/state?device_id=dev-1", nil), "esp32-display-1")
+	w := serve(h, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body)
+	}
+	var body struct {
+		Agents []model.AgentView `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Agents) != 0 {
+		t.Fatalf("a non-display device must not receive the agent list, got %+v", body.Agents)
+	}
 }
 
 func TestStateForAnotherDeviceIsForbidden(t *testing.T) {
 	devices := &fakeDevices{}
-	h := devicehttp.NewHandler(devices, fakeStore{devices: devices})
+	h := devicehttp.NewHandler(devices, fakeStore{devices: devices}, nil)
 	r := withCert(httptest.NewRequest(http.MethodGet, "/device/v1/state?device_id=dev-1", nil), "device-barcelona-2")
 	if w := serve(h, r); w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)
@@ -273,7 +348,7 @@ func startTLS(t *testing.T, pki testPKI, h http.Handler) string {
 func TestTLS12ClientCertificateNamesTheCaller(t *testing.T) {
 	pki := newTestPKI(t, "esp32-display-1")
 	devices := &fakeDevices{}
-	url := startTLS(t, pki, devicehttp.NewHandler(devices, nil))
+	url := startTLS(t, pki, devicehttp.NewHandler(devices, nil, nil))
 
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
 		RootCAs:      pki.caPool,
@@ -300,7 +375,7 @@ func TestTLS12ClientCertificateNamesTheCaller(t *testing.T) {
 
 func TestTLSWithoutClientCertificateFails(t *testing.T) {
 	pki := newTestPKI(t, "esp32-display-1")
-	url := startTLS(t, pki, devicehttp.NewHandler(&fakeDevices{}, nil))
+	url := startTLS(t, pki, devicehttp.NewHandler(&fakeDevices{}, nil, nil))
 
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
 		RootCAs:    pki.caPool,
