@@ -20,7 +20,7 @@ Deploy models to devices by tag, watch each device download, verify the SHA-256,
 - **1,000 simulated agents**, each with its own mTLS certificate. Zero errors, heartbeat p50 11 ms, 312 MB of control-plane memory. One deployment reached all of them in 10.7 s.
 - Failure paths checked on every CI run: tampered artifact refused, rollback, offline detection, certificate revocation (streams cut in 5 s).
 
-Read more: [one-page overview](docs/cami-fleet.html) · [design decisions](docs/decisions.md) · [field notes](docs/field-notes.md) · [ESP32 display](docs/esp32-display.md)
+Read more: [complete guide: every part and its role](docs/cami-fleet.html) · [design decisions](docs/decisions.md) · [field notes](docs/field-notes.md) · [ESP32 display](docs/esp32-display.md)
 
 ## How it works
 
@@ -315,11 +315,11 @@ setup, protocol and demo script in [docs/esp32-display.md](docs/esp32-display.md
 │   └── fleet-bench.sh           Measured inference numbers as a table
 ├── artifacts/                   Model artifacts (generated at runtime)
 └── docs/
-    ├── cami-fleet.html          One-page overview with diagrams
+    ├── cami-fleet.html          Complete guide: every part, its role, results
     ├── results.md               Measured results and how to reproduce them
     ├── decisions.md             Design decisions and their costs
     ├── field-notes.md           Problems found on real hardware, and fixes
-    └── architecture.html        Interactive architecture documentation
+    └── architecture.html        Component reference: contracts, config, ports
 ```
 
 ---

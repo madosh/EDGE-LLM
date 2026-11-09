@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cami Fleet v0 — Architecture</title>
+  <title>Cami Fleet — Architecture reference</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
     :root {
@@ -374,10 +374,13 @@
      HERO
 ═══════════════════════════════════════════════════════════ -->
 <header class="hero">
-  <div class="hero-badge">v0 — Edge AI Deployment Platform</div>
+  <div class="hero-badge">Component reference — Edge AI Deployment Platform</div>
   <h1><span>Cami Fleet</span> — Architecture</h1>
   <p>Control plane + Rust device agents for managing edge-AI deployments at scale.
      Push a model to tagged devices, watch it download, verify, and run — all from a live dashboard.</p>
+  <p style="font-size:.95rem;margin-top:14px">New here? Start with the <a href="cami-fleet.html" style="color:#38b6ff">complete guide</a>,
+     which explains every part and its role, the ESP32 display, revocation and the measured results.
+     This page is the detailed reference: contracts, configuration, ports and data model.</p>
   <div class="hero-stats">
     <div class="hero-stat">
       <div class="val">3</div>
@@ -425,7 +428,7 @@
       <div class="section-icon icon-purple">&#x1F3D7;</div>
       <div>
         <h2>System Architecture</h2>
-        <p>Three tiers: operator browser, Go control plane, Rust edge agents with pluggable inference</p>
+        <p>Three tiers: operator browser, Go control plane, edge devices (Rust agents with pluggable inference, plus the ESP32 display over HTTPS)</p>
       </div>
     </div>
     <div class="diagram-card">
@@ -438,9 +441,14 @@ graph TB
     subgraph CP["Control Plane - Go 1.23"]
         REST["REST API\n:8080\nX-Api-Key auth"]
         GRPC["gRPC Server\n:9090\nmTLS / TLS 1.3"]
+        DHTTP["Device HTTPS API\n:8443\nmTLS / TLS 1.2+"]
         BG["Background Jobs\nHeartbeat watchdog\n~30 s timeout"]
+        REV["revoked.txt\nchecked per handshake,\ncall and open stream"]
         REST --- GRPC
         REST --- BG
+        GRPC --- DHTTP
+        REV -.- GRPC
+        REV -.- DHTTP
     end
 
     subgraph Stores["Data Stores"]
@@ -452,6 +460,7 @@ graph TB
     subgraph Edge["Edge Devices"]
         D1["device-1\nJetson Orin\nRust agent"]
         D2["device-2\nRPi 5\nRust agent"]
+        ESP["esp32-display-1\nESP32-S3 touch screen\nno model, shows the fleet"]
     end
 
     subgraph Runtimes["Inference Runtimes"]
@@ -472,6 +481,9 @@ graph TB
     GRPC -- "writes telemetry" --> CH
     D1 -- "gRPC mTLS\nRegister - Heartbeat\nTelemetry - WatchDeployments" --> GRPC
     D2 -- "gRPC mTLS\nRegister - Heartbeat\nTelemetry - WatchDeployments" --> GRPC
+    ESP -- "HTTPS mTLS\nregister - heartbeat\nGET /state every 5 s" --> DHTTP
+    DHTTP -- "reads" --> PG
+    DHTTP -- "live tps / TTFT" --> CH
     D1 -- "HTTP download" --> ART
     D2 -- "HTTP download" --> ART
     D1 -. "inference" .-> LRT
@@ -855,11 +867,13 @@ erDiagram
       <div class="mermaid">
 flowchart TD
     subgraph Proto["device.proto - AgentService"]
-        REG["Register(RegisterRequest)\n-> RegisterResponse\nOne-shot: device_id, name, tags"]
-        HB["Heartbeat(HeartbeatRequest)\n-> HeartbeatResponse\nPeriodic: ~10 s"]
-        TS["StreamTelemetry(stream TelemetryPayload)\n-> stream TelemetryAck\nClient-streaming: tps / ttft_ms / mem_mb"]
+        REG["Register(RegisterRequest)\n-> RegisterResponse\nOne-shot: name must equal cert CN, tags, capabilities"]
+        HB["SendHeartbeat(Heartbeat)\n-> HeartbeatAck\nPeriodic: 10 s"]
+        TS["StreamTelemetry(stream TelemetryReport)\n-> Empty\nClient-streaming: tps / ttft_ms / mem_mb / source"]
         WD["WatchDeployments(WatchRequest)\n-> stream DeploymentInstruction\nServer-streaming: artifact_url / sha256"]
-        ACK["AckDeployment(DeploymentAck)\n-> AckResponse\nStatus updates per device"]
+        ACK["AckDeployment(DeploymentAck)\n-> Empty\nStatus updates per device"]
+        WT["WatchTasks(WatchRequest)\n-> stream AgentTask\nServer-streaming: ask-a-device questions"]
+        RT["ReportTask(TaskResult)\n-> Empty\nAnswer + tool steps"]
     end
 
     Agent3["Rust Agent"] -- "1 - Register" --> REG
@@ -868,6 +882,8 @@ flowchart TD
     WD -- "push instruction" --> Agent3
     Agent3 -- "4 - Ack lifecycle" --> ACK
     Agent3 -- "5 - Stream telemetry" --> TS
+    Agent3 -- "6 - Open task stream" --> WT
+    Agent3 -- "7 - Report answer" --> RT
 
     style Proto fill:#1e1b3a,stroke:#6c63ff,color:#e2e8f0
       </div>
@@ -934,7 +950,7 @@ flowchart TD
       <div class="stack-card">
         <div class="label"><span class="dot dot-purple"></span>Auth</div>
         <div class="name">API Key</div>
-        <div class="desc">X-Api-Key header (single key v0)</div>
+        <div class="desc">X-Api-Key header (one shared operator key)</div>
       </div>
       <div class="stack-card">
         <div class="label"><span class="dot dot-red"></span>CI / CD</div>
@@ -1014,15 +1030,17 @@ flowchart TD
             </tr>
           </thead>
           <tbody>
-            <tr><td>SvelteKit UI (dev)</td><td><code>5173</code></td><td>HTTP</td><td>-</td></tr>
-            <tr><td>Control Plane REST</td><td><code>8080</code></td><td>HTTP</td><td><code>X-Api-Key</code></td></tr>
-            <tr><td>Control Plane gRPC</td><td><code>9090</code></td><td>gRPC / mTLS</td><td>Client cert</td></tr>
-            <tr><td>Postgres</td><td><code>5432</code></td><td>TCP</td><td>password</td></tr>
-            <tr><td>ClickHouse HTTP</td><td><code>8123</code></td><td>HTTP</td><td>password</td></tr>
-            <tr><td>ClickHouse native</td><td><code>9000</code></td><td>TCP</td><td>password</td></tr>
-            <tr><td>NATS</td><td><code>4222</code></td><td>TCP</td><td>-</td></tr>
-            <tr><td>Google LiteRT</td><td><code>8000</code></td><td>HTTP</td><td>-</td></tr>
-            <tr><td>Ollama</td><td><code>11434</code></td><td>HTTP</td><td>-</td></tr>
+            <tr><td>SvelteKit UI</td><td><code>5173</code></td><td>HTTP</td><td>server adds the API key</td></tr>
+            <tr><td>Control Plane REST</td><td><code>8080</code></td><td>HTTP</td><td><code>X-Api-Key</code> (not on <code>/metrics</code>, SSE, <code>/artifacts</code>)</td></tr>
+            <tr><td>Control Plane gRPC</td><td><code>9090</code></td><td>gRPC / mTLS, TLS 1.3</td><td>Client cert + revocation list</td></tr>
+            <tr><td>Device HTTPS (ESP32)</td><td><code>8443</code></td><td>HTTPS / mTLS, TLS 1.2+</td><td>Client cert + revocation list</td></tr>
+            <tr><td>Prometheus</td><td><code>9091</code></td><td>HTTP</td><td>-</td></tr>
+            <tr><td>Grafana</td><td><code>3001</code></td><td>HTTP</td><td>login</td></tr>
+            <tr><td>Postgres <em>(internal)</em></td><td><code>5432</code></td><td>TCP</td><td>password</td></tr>
+            <tr><td>ClickHouse native <em>(internal)</em></td><td><code>9000</code></td><td>TCP</td><td>password</td></tr>
+            <tr><td>NATS <em>(internal)</em></td><td><code>4222</code></td><td>TCP</td><td>-</td></tr>
+            <tr><td>LiteRT-LM <em>(internal)</em></td><td><code>9379</code></td><td>HTTP</td><td>-</td></tr>
+            <tr><td>Ollama <em>(internal)</em></td><td><code>11434</code></td><td>HTTP</td><td>-</td></tr>
           </tbody>
         </table>
       </div>
@@ -1036,11 +1054,11 @@ flowchart TD
             </tr>
           </thead>
           <tbody>
-            <tr><td><code>ca.crt</code></td><td>Control Plane + Agents</td><td>Root CA for mutual verification</td></tr>
-            <tr><td><code>server.crt</code></td><td>Control Plane</td><td>gRPC listener identity</td></tr>
-            <tr><td><code>server.key</code></td><td>Control Plane</td><td>gRPC private key</td></tr>
-            <tr><td><code>device.crt</code></td><td>All Agents (shared)</td><td>Client cert (v0 shared)</td></tr>
-            <tr><td><code>device.key</code></td><td>All Agents (shared)</td><td>Client private key</td></tr>
+            <tr><td><code>ca.key</code></td><td>cert-gen, loadgen only</td><td>Signs certificates; volume <code>ca-private</code>, never mounted by a running service</td></tr>
+            <tr><td><code>ca.crt</code></td><td>Everyone</td><td>Root CA for mutual verification</td></tr>
+            <tr><td><code>server/server.crt</code> + <code>.key</code></td><td>Control Plane</td><td>Identity of the gRPC and device HTTPS listeners</td></tr>
+            <tr><td><code>server/revoked.txt</code></td><td>Control Plane</td><td>Revoked serials, re-read on change; unreadable means refuse all</td></tr>
+            <tr><td><code>devices/&lt;name&gt;/device.crt</code> + <code>.key</code></td><td>That one device</td><td>Per-device client cert; CN = device name = identity</td></tr>
           </tbody>
         </table>
       </div>
@@ -1071,6 +1089,16 @@ flowchart LR
         PROTO["protoc generate"] --> TIDY["go mod tidy"]
         TIDY --> VET["go vet"]
         VET --> GOTEST["go test -race"]
+        GOTEST --> PGIT["Postgres integration\nservice container"]
+    end
+
+    subgraph FwJob["Firmware Job"]
+        SEC["secrets.example.h\ncopied to secrets.h"] --> PIO["pio run\nESP32-S3"]
+    end
+
+    subgraph E2EJob["End-to-end Job"]
+        UP["docker compose up"] --> E2E["e2e.sh\n11 journeys"]
+        E2E --> FAIL["demo-failures.sh\ntamper - canary - offline - revoke"]
     end
 
     subgraph RustJob["Rust Job"]
@@ -1093,7 +1121,11 @@ flowchart LR
     SRC --> RustJob
     SRC --> WebJob
     SRC --> DockerJob
+    SRC --> FwJob
+    SRC --> E2EJob
 
+    style FwJob fill:#2a1a1a,stroke:#ff6584,color:#e2e8f0
+    style E2EJob fill:#1a2030,stroke:#38b6ff,color:#e2e8f0
     style Trigger fill:#1e1b3a,stroke:#6c63ff,color:#e2e8f0
     style GoJob fill:#1a2a1e,stroke:#00d9a3,color:#e2e8f0
     style RustJob fill:#2a2210,stroke:#ffb142,color:#e2e8f0
@@ -1111,6 +1143,8 @@ flowchart LR
           <div class="prop"><span class="key">ClickHouse</span><span class="value"><code>store_test.go</code> - Insert, query, limit, ordering</span></div>
           <div class="prop"><span class="key">REST</span><span class="value"><code>handlers_test.go</code> - Health, auth middleware, validation, artifacts, CORS</span></div>
           <div class="prop"><span class="key">gRPC</span><span class="value"><code>server_test.go</code> - Push fanout, watcher registration, device isolation</span></div>
+          <div class="prop"><span class="key">Device HTTPS</span><span class="value"><code>devicehttp_test.go</code> - Identity from cert, agents only for displays, no internal IDs, live telemetry</span></div>
+          <div class="prop"><span class="key">mTLS</span><span class="value"><code>mtls_test.go</code> - Serial parsing, reload on change, fail closed when unreadable</span></div>
           <div class="prop"><span class="key">Model</span><span class="value"><code>deployment_test.go</code> - Status constant uniqueness</span></div>
         </div>
       </div>
@@ -1171,11 +1205,20 @@ flowchart LR
       <div class="diagram-card">
         <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Control Plane (Go 1.23)</p>
         <pre style="font-family:'Fira Code','Cascadia Code',monospace;font-size:.78rem;color:var(--text);line-height:1.6;margin:0;"><code style="background:none;padding:0;">control-plane/
-  cmd/server/main.go        Entry point + config
+  cmd/server/main.go        Entry point + config + offline detector
+  cmd/loadgen/main.go       N simulated agents, per-agent certs
   internal/
     api/grpc/
-      server.go             gRPC: Register, Heartbeat, Watch, Ack
+      server.go             gRPC: 7 RPCs, identity checks
+      revocation.go         Unary + stream revocation interceptors
       server_test.go        Push fanout + watcher tests
+    api/devicehttp/
+      devicehttp.go         HTTPS API for the ESP32 (:8443)
+    mtls/
+      mtls.go               TLS config + revoked.txt watcher
+    fleet/                  Targeting, requirements, reconcile
+    notify/                 Webhook alerts
+    metrics/                Prometheus collectors
     api/rest/
       server.go             Chi router + middleware
       handlers.go           REST endpoints
@@ -1204,8 +1247,10 @@ flowchart LR
     lib.rs                  Library exports for tests
     config.rs               CLI/env config + resolve_backend()
     grpc_client.rs          mTLS gRPC connection
-    model_runtime.rs        LiteRT / Ollama / Stub dispatch
-    telemetry.rs            Streaming telemetry loop
+    model_runtime.rs        Verify SHA-256, then LiteRT / Ollama / Stub
+    telemetry.rs            Probe + streaming telemetry loop
+    agent_task.rs           Ask-a-device with read-only tools
+    system.rs               Device status for the tools
   tests/
     integration.rs          End-to-end stub backend tests
   build.rs                  tonic-build proto compilation
@@ -1221,7 +1266,9 @@ flowchart LR
     routes/
       +page.svelte          Fleet overview
       deployments/           Deploy form + history
-      devices/[id]/          Device detail + telemetry
+      devices/[id]/          Device detail + telemetry + ask
+      monitoring/            Fleet charts + alerts
+    hooks.server.ts         /api proxy, adds the API key
     lib/
       api.ts                Typed API client
       api.test.ts           Vitest mock-fetch tests
@@ -1233,11 +1280,25 @@ flowchart LR
       <div class="diagram-card">
         <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Root / Infrastructure</p>
         <pre style="font-family:'Fira Code','Cascadia Code',monospace;font-size:.78rem;color:var(--text);line-height:1.6;margin:0;"><code style="background:none;padding:0;">EDGE-LLM/
-  docker-compose.yml        Full stack (7+ services)
-  .github/workflows/ci.yml  Go + Rust + Web + Docker CI
-  scripts/gen-certs.sh      mTLS certificate generation
+  docker-compose.yml        Full stack; profiles litert, ollama, loadtest
+  .github/workflows/ci.yml  Go + Rust + Web + Firmware + Docker + E2E
+  firmware/esp32-display/   ESP32-S3 touch display (PlatformIO)
+  runtimes/litert-lm/       LiteRT-LM server image
+  examples/litert-android/  Offline LiteRT Android app
+  monitoring/               Prometheus + Grafana provisioning
+  scripts/
+    gen-certs.sh            CA + one cert per device
+    revoke-device.sh        Revoke / restore a device cert
+    e2e.sh                  User journeys against the stack
+    demo-failures.sh        Tamper, canary, offline, revoke
+    load-test.sh            Simulated agents at scale
+    fleet-bench.sh          Measured inference table
   artifacts/                Model artifacts (runtime)
+  docs/cami-fleet.html      The complete guide
   docs/architecture.html    This page
+  docs/results.md           Measured numbers
+  docs/decisions.md         Design decision records
+  docs/field-notes.md       Debugging notes
   .gitignore                Go/Rust/Node/IDE ignores
   .editorconfig             Cross-language formatting
   .pre-commit-config.yaml   Pre-commit hooks
@@ -1292,6 +1353,18 @@ flowchart LR
             <tr><td>Tests</td><td>Web: Vitest API client tests (6 endpoint groups with error handling)</td><td><span class="status status-done">Done</span></td></tr>
             <tr><td>Docs</td><td>Professional README with badges, architecture diagram, quick start</td><td><span class="status status-done">Done</span></td></tr>
             <tr><td>Repo</td><td>.gitignore, LICENSE (MIT), CONTRIBUTING.md, .editorconfig, .pre-commit-config.yaml</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Security</td><td>Per-device certificates; identity from the cert CN, checked on every call</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Security</td><td>Certificate revocation: handshake, per call, open streams every 5 s, fail closed</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Agent</td><td>Reconnect after 5 s on any failure; reconcile on rejoin</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Fleet</td><td>Requirements gating with skip reasons, canary %, promote, rollback</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Fleet</td><td>Ask a device: on-device agent with read-only tools</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Web</td><td>Live updates over SSE (NATS consumers), monitoring page, typed API client</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>REST</td><td>Input validation for deployments (model id, SHA-256, selector)</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Devices</td><td>ESP32-S3 display: device HTTPS API, live agent list, touch detail, mDNS</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Inference</td><td>Real model through the fleet: Qwen2.5-0.5B on Ollama, 62.6 tok/s measured</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Scale</td><td>Load generator: 1,000 agents with real identities, 0 errors</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>CI/CD</td><td>Postgres integration tests, firmware build, end-to-end + failure demos</td><td><span class="status status-done">Done</span></td></tr>
+            <tr><td>Docs</td><td>Complete guide, results, decision records, field notes</td><td><span class="status status-done">Done</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -1302,25 +1375,21 @@ flowchart LR
       <p style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:16px;">Remaining Work</p>
       <div class="mermaid">
 flowchart LR
-    subgraph P1["P1 - Core Gaps"]
-        P1A["Agent retry logic\nregistration + stream\nreconnection"]
-        P1B["Web UI live updates\nauto-refresh / polling\nfixes"]
-        P1C["Telemetry sparklines\nreal chart components"]
-        P1D["REST input validation\nmodel_id / sha256 / tags"]
+    subgraph P1["P1 - Scale"]
+        P1A["Concurrent fan-out\nbatched inserts, parallel push\n(today ~10.7 ms per device)"]
+        P1B["Multiple control planes\nshare live streams\nvia NATS"]
     end
 
-    subgraph P2["P2 - Hardening"]
-        P2A["NATS subscribers\ncurrently unused"]
-        P2B["Agent graceful shutdown\ntokio::signal handler"]
-        P2C["REST pagination\nlist endpoints"]
-        P2D["TypeScript types\napi.ts interfaces"]
+    subgraph P2["P2 - Trust"]
+        P2A["Short-lived certs\nautomatic rotation"]
+        P2B["Tool evidence\nstatus answers must\ncall device_status"]
+        P2C["CORS lockdown\nrestrict origins"]
     end
 
     subgraph P3["P3 - Polish"]
-        P3A["Per-device certs\nreplace shared cert"]
-        P3B["CORS lockdown\nrestrict origins"]
-        P3C["Local dev without Docker\nproto gen + cert paths"]
-        P3D["Commit go.sum + gen/\nor document setup"]
+        P3A["REST pagination\nlist endpoints"]
+        P3B["Agent graceful shutdown\ntokio::signal handler"]
+        P3C["Real-traffic telemetry\nnot only probes"]
     end
 
     P1 --> P2 --> P3
@@ -1333,23 +1402,19 @@ flowchart LR
 
     <div class="grid-2">
       <div class="diagram-card">
-        <p style="font-size:.85rem;font-weight:700;color:var(--heading);margin-bottom:10px;">P1 - Core Feature Gaps</p>
+        <p style="font-size:.85rem;font-weight:700;color:var(--heading);margin-bottom:10px;">P1 - Scale (found by the load test)</p>
         <div class="props" style="display:flex;flex-direction:column;gap:10px;">
           <div style="font-size:.82rem;">
-            <strong style="color:var(--accent3);">Agent retry logic</strong>
-            <span style="color:var(--muted);"> - No backoff on registration failure. Watch stream break kills deployment reception. No <code>tokio::signal</code> for graceful shutdown.</span>
+            <strong style="color:var(--accent3);">Serial fan-out</strong>
+            <span style="color:var(--muted);"> - Creating a deployment targets devices one at a time: 10.7 s for 1,000. Batch the inserts and push concurrently.</span>
           </div>
           <div style="font-size:.82rem;">
-            <strong style="color:var(--accent3);">REST validation</strong>
-            <span style="color:var(--muted);"> - <code>POST /api/deployments</code> accepts empty <code>model_id</code>, invalid SHA-256, and empty tag selectors.</span>
+            <strong style="color:var(--accent3);">One instance</strong>
+            <span style="color:var(--muted);"> - Open streams are tracked in memory, so a second control plane would not reach devices connected to the first.</span>
           </div>
           <div style="font-size:.82rem;">
-            <strong style="color:var(--accent3);">Web UI fixes</strong>
-            <span style="color:var(--muted);"> - Artifact dropdown resets on polling refresh. No loading/empty/error skeleton states on device detail.</span>
-          </div>
-          <div style="font-size:.82rem;">
-            <strong style="color:var(--accent3);">Telemetry charts</strong>
-            <span style="color:var(--muted);"> - SVG sparklines are functional but basic. Could use a chart library for zoom, tooltips, time range selection.</span>
+            <strong style="color:var(--accent3);">Steady state is fine</strong>
+            <span style="color:var(--muted);"> - About 0.3 MB per connected agent, heartbeat p50 11 ms at 1,000, Postgres pool flat at 18. See <a href="results.md">results.md</a>.</span>
           </div>
         </div>
       </div>
@@ -1357,24 +1422,24 @@ flowchart LR
         <p style="font-size:.85rem;font-weight:700;color:var(--heading);margin-bottom:10px;">P2/P3 - Hardening &amp; Polish</p>
         <div class="props" style="display:flex;flex-direction:column;gap:10px;">
           <div style="font-size:.82rem;">
-            <strong style="color:#ffb142;">NATS subscribers</strong>
-            <span style="color:var(--muted);"> - Event bus is wired but publish-only. No consumers anywhere.</span>
+            <strong style="color:#ffb142;">Short-lived certs</strong>
+            <span style="color:var(--muted);"> - Revocation works but is a local list, and certificates last years. Short-lived, rotated certificates are the real fix.</span>
           </div>
           <div style="font-size:.82rem;">
-            <strong style="color:#ffb142;">Pagination</strong>
-            <span style="color:var(--muted);"> - <code>GET /api/devices</code> and <code>/api/deployments</code> return all rows with no limit/offset.</span>
-          </div>
-          <div style="font-size:.82rem;">
-            <strong style="color:#38b6ff;">Per-device certs</strong>
-            <span style="color:var(--muted);"> - v0 uses a shared <code>device.crt</code> for all agents. Production needs per-device identity.</span>
+            <strong style="color:#ffb142;">Tool evidence</strong>
+            <span style="color:var(--muted);"> - A 0.5B model answered a status question without calling <code>device_status</code> and made the facts up. Require the tool call for status questions.</span>
           </div>
           <div style="font-size:.82rem;">
             <strong style="color:#38b6ff;">CORS</strong>
             <span style="color:var(--muted);"> - <code>Access-Control-Allow-Origin: *</code> in REST server. Restrict to known origins.</span>
           </div>
           <div style="font-size:.82rem;">
-            <strong style="color:#38b6ff;">TypeScript</strong>
-            <span style="color:var(--muted);"> - API client uses generic <code>get&lt;T&gt;</code> but callers pass <code>any</code>. Needs exported interfaces.</span>
+            <strong style="color:#38b6ff;">Pagination</strong>
+            <span style="color:var(--muted);"> - <code>GET /api/devices</code> and <code>/api/deployments</code> return all rows with no limit/offset.</span>
+          </div>
+          <div style="font-size:.82rem;">
+            <strong style="color:#38b6ff;">Agent shutdown</strong>
+            <span style="color:var(--muted);"> - No <code>tokio::signal</code> handler; the agent stops abruptly and the control plane marks it offline 30 s later.</span>
           </div>
         </div>
       </div>
@@ -1384,8 +1449,9 @@ flowchart LR
 </div><!-- /wrapper -->
 
 <footer>
-  Cami Fleet v0 - Edge AI Deployment Platform -
-  Go control plane / Rust agents / SvelteKit UI / LiteRT + Ollama inference
+  Cami Fleet - Edge AI Deployment Platform -
+  Go control plane / Rust agents / SvelteKit UI / ESP32 display / LiteRT + Ollama inference -
+  <a href="cami-fleet.html" style="color:#38b6ff">complete guide</a>
 </footer>
 
 <script>

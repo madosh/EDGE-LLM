@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Cami Fleet — how it works, including the ESP32 display</title>
+<title>Cami Fleet — the complete guide</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -19,11 +19,12 @@
     --green: #22c55e;
     --amber: #f59e0b;
     --red: #ef4444;
+    --violet: #a78bfa;
     --radius: 16px;
-    --mx: min(1080px, calc(100% - 40px));
+    --mx: min(1120px, calc(100% - 40px));
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; scroll-padding-top: 70px; }
   body {
     margin: 0;
     background:
@@ -35,193 +36,144 @@
   }
   a { color: var(--cloud); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  code { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: .9em; color: #cbd5e1; }
+  code { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: .88em; color: #cbd5e1; }
+  pre.cmd { background: #0a0f1c; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.55; margin: 0; }
+  pre.cmd code { color: #cbd5e1; }
+  pre.cmd .c { color: var(--faint); }
   em { font-style: normal; color: var(--text); }
 
-  /* layout */
   .wrap { width: var(--mx); margin: 0 auto; }
   header.top {
     border-bottom: 1px solid var(--line);
     backdrop-filter: blur(8px);
-    position: sticky;
-    top: 0;
-    background: rgba(11,16,32,.72);
-    z-index: 10;
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(11,16,32,.78);
   }
-  .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 58px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 58px; gap: 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
   .brand .mark { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--cloud), var(--edge)); }
-  .top nav { display: flex; gap: 22px; }
-  .top nav a { color: var(--muted); font-size: 14px; }
+  .top nav { display: flex; gap: 18px; overflow-x: auto; scrollbar-width: none; }
+  .top nav a { color: var(--muted); font-size: 13.5px; white-space: nowrap; }
   .top nav a:hover { color: var(--text); text-decoration: none; }
-  @media (max-width: 680px) { .top nav { display: none; } }
+  @media (max-width: 760px) { .top nav { display: none; } }
 
-  /* hero */
   .hero { padding: 72px 0 40px; }
   .eyebrow {
-    display: inline-block;
-    font-size: 12px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--edge);
-    border: 1px solid rgba(249,115,22,.35);
-    background: rgba(249,115,22,.08);
-    border-radius: 999px;
-    padding: 5px 12px;
-    margin-bottom: 20px;
+    display: inline-block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--edge); border: 1px solid rgba(249,115,22,.35); background: rgba(249,115,22,.08);
+    border-radius: 999px; padding: 5px 12px; margin-bottom: 20px;
   }
-  h1 {
-    font-size: clamp(2.1rem, 5.2vw, 3.4rem);
-    line-height: 1.08;
-    letter-spacing: -.025em;
-    font-weight: 700;
-    margin: 0 0 18px;
-    max-width: 18ch;
-  }
+  h1 { font-size: clamp(2.1rem, 5.2vw, 3.4rem); line-height: 1.08; letter-spacing: -.025em; font-weight: 700; margin: 0 0 18px; max-width: 20ch; }
   h1 .accent { color: var(--cloud); }
-  .lede { max-width: 64ch; color: var(--muted); font-size: 1.15rem; margin: 0 0 28px; }
+  .lede { max-width: 68ch; color: var(--muted); font-size: 1.12rem; margin: 0 0 28px; }
   .cta { display: flex; gap: 12px; flex-wrap: wrap; }
-  .btn {
-    border-radius: 10px;
-    padding: 10px 18px;
-    font-size: 14px;
-    font-weight: 500;
-    border: 1px solid var(--line);
-    background: var(--surface);
-    color: var(--text);
-  }
+  .btn { border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 500; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
   .btn.primary { background: var(--cloud); color: #04222f; border-color: transparent; font-weight: 600; }
   .btn:hover { text-decoration: none; border-color: var(--cloud); }
 
-  .stats { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 40px; }
-  .stat {
-    flex: 1 1 160px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 16px 18px;
-  }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 40px; }
+  @media (max-width: 860px) { .stats { grid-template-columns: 1fr 1fr; } }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
   .stat b { display: block; font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; }
   .stat span { color: var(--muted); font-size: 13px; }
 
-  /* sections */
-  section { padding: 52px 0; border-top: 1px solid var(--line); }
-  .sec-head { max-width: 62ch; margin-bottom: 26px; }
-  .sec-head h2 { font-size: 1.7rem; letter-spacing: -.02em; margin: 0 0 8px; }
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  .sec-head { max-width: 70ch; margin-bottom: 26px; }
+  .sec-head .kicker { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+  .sec-head h2 { font-size: 1.75rem; letter-spacing: -.02em; margin: 0 0 8px; }
   .sec-head p { color: var(--muted); margin: 0; }
+  h3.group { font-size: 1.05rem; margin: 34px 0 12px; display: flex; align-items: center; gap: 10px; }
+  h3.group .sw { width: 10px; height: 10px; border-radius: 3px; }
+  h3.group small { color: var(--faint); font-weight: 400; font-size: 13px; }
 
-  .panel {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 22px;
-  }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
   .mermaid { display: flex; justify-content: center; }
   .mermaid svg { max-width: 100%; height: auto; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* parts tables */
+  .tbl-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 4px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 12px 14px 10px; font-weight: 600; }
+  tbody td { padding: 12px 14px; border-top: 1px solid var(--line); font-size: 14px; vertical-align: top; color: var(--muted); }
+  tbody td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+  tbody td b { color: var(--text); font-weight: 600; }
+  td code.path { color: var(--cloud); font-size: 12.5px; }
+  .parts td:nth-child(2) { width: 44%; }
+  .num td:not(:first-child) { font-variant-numeric: tabular-nums; }
 
   /* step cards */
   .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .step {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 18px;
-    position: relative;
-  }
-  .step .n {
-    width: 28px; height: 28px; border-radius: 8px;
-    display: grid; place-items: center;
-    background: var(--surface-2); color: var(--cloud);
-    font-size: 13px; font-weight: 600; margin-bottom: 12px;
-  }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .step .n { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); color: var(--cloud); font-size: 13px; font-weight: 600; margin-bottom: 12px; }
   .step h3 { font-size: 1rem; margin: 0 0 6px; }
   .step p { color: var(--muted); font-size: 14px; margin: 0; }
   @media (max-width: 860px) { .steps { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 480px) { .steps { grid-template-columns: 1fr; } }
 
-  /* feature grid */
-  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
-  .feature {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 20px;
-  }
-  .feature .tag {
-    display: inline-block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--bg); background: var(--cloud); border-radius: 999px; padding: 3px 10px; margin-bottom: 12px; font-weight: 600;
-  }
+  /* feature cards */
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .feature { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .feature .tag { display: inline-block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--bg); background: var(--cloud); border-radius: 999px; padding: 3px 10px; margin-bottom: 12px; font-weight: 600; }
   .feature .tag.edge { background: var(--edge); }
   .feature .tag.green { background: var(--green); }
   .feature .tag.amber { background: var(--amber); color: #2a1c02; }
+  .feature .tag.violet { background: var(--violet); }
   .feature h3 { font-size: 1.05rem; margin: 0 0 8px; }
   .feature p { color: var(--muted); font-size: 14px; margin: 0; }
+  .feature p + p { margin-top: 8px; }
   @media (max-width: 760px) { .features { grid-template-columns: 1fr; } }
 
-  /* display section */
+  /* display mockups */
   .display-grid { display: grid; grid-template-columns: 260px 260px 1fr; gap: 28px; align-items: start; }
   @media (max-width: 920px) { .display-grid { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 620px) { .display-grid { grid-template-columns: 1fr; } }
   .device figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; text-align: center; }
-  .phone {
-    width: 240px; height: 320px; margin: 0 auto;
-    background: var(--bg);
-    border: 9px solid #090d17;
-    border-radius: 22px;
-    box-shadow: 0 10px 30px rgba(0,0,0,.4), 0 0 0 1px var(--line);
-    overflow: hidden; position: relative;
-  }
-  .scr-bar {
-    height: 32px; background: var(--surface-2);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 11px; font-size: 13px; font-weight: 650; color: var(--cloud);
-  }
+  .phone { width: 240px; height: 320px; margin: 0 auto; background: var(--bg); border: 9px solid #090d17; border-radius: 22px; box-shadow: 0 10px 30px rgba(0,0,0,.4), 0 0 0 1px var(--line); overflow: hidden; position: relative; }
+  .scr-bar { height: 32px; background: var(--surface-2); display: flex; align-items: center; justify-content: space-between; padding: 0 11px; font-size: 13px; font-weight: 650; color: var(--cloud); }
   .scr-bar .up { color: var(--green); font-size: 12px; }
-  .row {
-    margin: 8px 10px 0; background: var(--surface-2); border-radius: 9px;
-    padding: 7px 8px 7px 28px; position: relative; min-height: 38px;
-  }
+  .row { margin: 8px 10px 0; background: var(--surface-2); border-radius: 9px; padding: 7px 8px 7px 28px; position: relative; min-height: 38px; }
   .row .dot { position: absolute; left: 10px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
   .row .dot.off { background: var(--red); }
   .row b { display: block; font-size: 13px; }
   .row small { display: block; font-size: 11px; color: var(--amber); }
+  .row small.run { color: var(--green); }
   .row small.idle { color: var(--faint); }
-  .scr-foot {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 24px; background: var(--surface-2);
-    color: var(--faint); font-size: 11px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px;
-  }
-  .detail { padding: 11px 12px; font-size: 13px; }
+  .scr-foot { position: absolute; left: 0; right: 0; bottom: 0; height: 24px; background: var(--surface-2); color: var(--faint); font-size: 11px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px; }
+  .detail { padding: 10px 12px; font-size: 13px; }
   .detail .dh { display: flex; justify-content: space-between; font-weight: 650; }
   .detail .dh em { color: var(--green); font-size: 12px; }
-  .detail .sub { color: var(--muted); font-size: 12px; margin: 3px 0 8px; }
-  .detail .hr { height: 1px; background: var(--line); margin: 8px 0; }
+  .detail .sub { color: var(--muted); font-size: 12px; margin: 3px 0 2px; }
+  .detail .run { color: var(--edge); font-size: 12px; }
+  .detail .live { color: var(--green); font-size: 12px; }
+  .detail .hr { height: 1px; background: var(--line); margin: 7px 0; }
   .detail .cap { color: var(--faint); font-size: 11px; letter-spacing: .06em; }
-  .detail .kv { display: flex; justify-content: space-between; margin: 5px 0; }
+  .detail .kv { display: flex; justify-content: space-between; margin: 4px 0; }
   .detail .kv .ok { color: var(--green); font-weight: 600; }
-  .detail .kv .no { color: var(--red); font-weight: 600; }
   .detail .kv .model { font-weight: 650; }
-  .detail .kv .skip { color: var(--faint); font-weight: 600; }
-  .detail .reason { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .detail .kv .runw { color: var(--green); font-weight: 600; }
   .read p { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
   .read p:last-child { margin: 0; }
   .read b { color: var(--text); }
-
-  /* table */
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  thead th { text-align: left; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 0 14px 10px; }
-  tbody td { padding: 13px 14px; border-top: 1px solid var(--line); font-size: 14px; vertical-align: top; width: 50%; }
-  tbody tr td:first-child { color: var(--text); }
-  tbody tr td:last-child { color: var(--muted); }
   .check { color: var(--green); margin-right: 8px; font-weight: 700; }
   .cross { color: var(--faint); margin-right: 8px; font-weight: 700; }
-  .tbl-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 8px; }
+  .dn td { width: 50%; }
+  .dn td:first-child { font-weight: 400; white-space: normal; }
 
-  .ports { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-  .ports .p { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px; font-size: 14px; }
-  .ports .p b { color: var(--cloud); }
+  .ports { display: flex; flex-wrap: wrap; gap: 10px; }
+  .ports .p { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px; font-size: 14px; color: var(--muted); }
+  .ports .p b { color: var(--cloud); margin-right: 6px; }
+  .ports .p.dev b { color: var(--edge); }
+
+  .tree { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 12.8px; line-height: 1.7; color: #cbd5e1; margin: 0; white-space: pre; overflow-x: auto; }
+  .tree .d { color: var(--cloud); }
+  .tree .x { color: var(--faint); }
+
+  .note { border-left: 3px solid var(--amber); background: rgba(245,158,11,.06); padding: 12px 16px; border-radius: 0 10px 10px 0; color: var(--muted); font-size: 14px; margin-top: 18px; }
+  .note b { color: var(--text); }
 
   footer.foot { border-top: 1px solid var(--line); padding: 32px 0 56px; color: var(--muted); font-size: 14px; }
-  footer.foot a { color: var(--cloud); }
 </style>
 </head>
 <body>
@@ -230,260 +182,758 @@
   <div class="wrap">
     <div class="brand"><span class="mark"></span> Cami Fleet</div>
     <nav>
-      <a href="#flow">How a model travels</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#display">The display</a>
-      <a href="#limits">Limits</a>
+      <a href="#overview">Overview</a>
+      <a href="#parts">Every part</a>
+      <a href="#flow">A deployment</a>
+      <a href="#lifecycle">Lifecycles</a>
+      <a href="#security">Security</a>
+      <a href="#display">ESP32</a>
+      <a href="#results">Results</a>
+      <a href="#quality">Testing</a>
+      <a href="#decisions">Decisions</a>
+      <a href="#reference">Reference</a>
     </nav>
   </div>
 </header>
 
 <main class="wrap">
 
+  <!-- ═══ HERO ═══════════════════════════════════════════════════════════ -->
   <section class="hero" style="border-top:none">
-    <span class="eyebrow">Edge AI deployment · with a screen on the desk</span>
-    <h1>Models go to the device. The <span class="accent">screen shows who is up.</span></h1>
+    <span class="eyebrow">Edge AI deployment · the complete guide</span>
+    <h1>Ship a model to a fleet. <span class="accent">Prove every byte that runs.</span></h1>
     <p class="lede">
-      Cami Fleet deploys an AI model to the machines you choose by label, verifies every byte against a
-      SHA-256 fingerprint before it runs, and tracks each device by its own certificate. A 2.8-inch
-      ESP32-S3 touch board joins the same fleet and lists the live agents — tap one to see exactly what
-      its latest deployment required, and whether it qualified.
+      Cami Fleet deploys AI models to edge devices chosen by label. Each device checks the model's SHA-256
+      before running it, and each one is identified by its own certificate. You can stage a rollout, promote it
+      or roll it back, and watch measured inference numbers come back. This page explains every part of the
+      system and the role it plays, from the Go control plane to the Rust agents to the ESP32 touch screen on the desk.
     </p>
     <div class="cta">
-      <a class="btn primary" href="#display">See the display</a>
-      <a class="btn" href="#architecture">How it fits together</a>
+      <a class="btn primary" href="#parts">Every part and its role</a>
+      <a class="btn" href="#flow">Follow one deployment</a>
+      <a class="btn" href="#results">Measured results</a>
     </div>
     <div class="stats">
-      <div class="stat"><b>4</b><span>services: REST, gRPC, device HTTPS, dashboard</span></div>
-      <div class="stat"><b>mTLS</b><span>every device has its own certificate</span></div>
-      <div class="stat"><b>SHA-256</b><span>verified before load, and on every reuse</span></div>
-      <div class="stat"><b>5 s</b><span>the display's refresh for live fleet state</span></div>
+      <div class="stat"><b>62.6 tok/s</b><span>Qwen2.5-0.5B, deployed through the fleet, CPU only (median)</span></div>
+      <div class="stat"><b>1,000 agents</b><span>each with its own mTLS certificate, zero errors</span></div>
+      <div class="stat"><b>10.7 s</b><span>for one deployment to reach all 1,000 devices</span></div>
+      <div class="stat"><b>5 s</b><span>to cut a revoked device's open streams</span></div>
     </div>
   </section>
 
-  <section id="flow">
+  <!-- ═══ OVERVIEW ═══════════════════════════════════════════════════════ -->
+  <section id="overview">
     <div class="sec-head">
-      <h2>How a model travels</h2>
-      <p>You choose the model and the labels. The control plane decides who qualifies. The device runs the file only after the hash matches. The display watches it all happen.</p>
-    </div>
-    <div class="steps">
-      <article class="step">
-        <div class="n">1</div>
-        <h3>You choose</h3>
-        <p>A model, a label like <em>location = barcelona</em>, and optional requirements: RAM, a CPU / GPU / NPU, or an architecture.</p>
-      </article>
-      <article class="step">
-        <div class="n">2</div>
-        <h3>Targeting</h3>
-        <p>Every matching device is recorded. One that lacks the RAM or the chip is skipped <em>with the reason</em>, not failed at load time.</p>
-      </article>
-      <article class="step">
-        <div class="n">3</div>
-        <h3>The agent</h3>
-        <p>The Rust agent downloads the file, keeps it only if the SHA-256 matches, and loads that exact file into LiteRT-LM, Ollama, or the stub.</p>
-      </article>
-      <article class="step">
-        <div class="n">4</div>
-        <h3>The display</h3>
-        <p>The ESP32 polls every 5 seconds. Each row shows the agent and its deployment; a tap shows what it needed and whether it has it.</p>
-      </article>
-    </div>
-
-    <div class="panel" style="margin-top:22px">
-      <pre class="mermaid">
-sequenceDiagram
-    autonumber
-    actor You as Operator
-    participant CP as Control plane
-    participant A as Rust agent
-    participant D as ESP32 display
-    You->>CP: Deploy model to location=barcelona (min 2 GB, gpu)
-    CP->>CP: Match labels, check requirements
-    CP-->>You: targeted / skipped (with reason)
-    CP->>A: Desired state over gRPC (mTLS, TLS 1.3)
-    A->>A: Download, verify SHA-256, load exact file
-    A-->>CP: downloading → verifying → running
-    loop every 5 s
-        D->>CP: GET /state over HTTPS (mTLS, TLS 1.2+)
-        CP-->>D: agents, status, what each was asked
-    end
-      </pre>
-    </div>
-  </section>
-
-  <section id="architecture">
-    <div class="sec-head">
-      <h2>The pieces</h2>
-      <p>Agents speak gRPC. The display can't, so it uses the same identity checks over a smaller HTTPS API. Both dial out — neither needs an open port on the device.</p>
+      <div class="kicker">01 · Overview</div>
+      <h2>The system at a glance</h2>
+      <p>Four layers. Operators work through the dashboard and REST API. The control plane decides which device gets which model, and keeps state in Postgres and telemetry in ClickHouse. Devices always dial out to it: Rust agents over gRPC, the ESP32 over HTTPS, both with mutual TLS. Setup jobs and observability run beside them.</p>
     </div>
     <div class="panel">
       <pre class="mermaid">
 flowchart TB
     subgraph OPS["Operator"]
+        direction LR
         BROWSER["Browser"]
-        WEB["Dashboard :5173<br/>adds API key"]
+        WEB["Web dashboard :5173<br/>adds the API key server-side"]
+        BROWSER --> WEB
     end
-    subgraph CPLANE["Control plane · Go"]
-        REST["REST :8080<br/>deploy · promote · rollback · ask"]
+    subgraph CP["Control plane · Go"]
+        direction LR
+        REST["REST API :8080<br/>deploy · promote · roll back · ask"]
         FLEET["Targeting<br/>labels · rollout % · requirements"]
-        GRPC["gRPC :9090 · TLS 1.3"]
-        DHTTP["Device HTTPS :8443 · TLS 1.2+"]
+        GRPC["gRPC AgentService :9090<br/>mTLS · TLS 1.3"]
+        DHTTP["Device HTTPS API :8443<br/>mTLS · TLS 1.2+"]
+        GUARD["mTLS + revocation list<br/>offline detector · webhooks"]
+        REST --> FLEET --> GRPC
+        GUARD -.- DHTTP
     end
-    subgraph STATE["State"]
-        PG[("Postgres<br/>devices · deployments")]
-        CH[("ClickHouse<br/>telemetry")]
-        NATS{{"NATS<br/>events"}}
+    subgraph EDGE["Edge"]
+        direction LR
+        AGENT["Rust agents<br/>verify · load · probe · answer"]
+        RT["Runtimes<br/>LiteRT-LM · Ollama · stub"]
+        ESP["ESP32-S3 display<br/>live agent dashboard"]
+        AGENT --> RT
     end
-    subgraph EDGE["At the edge"]
-        AGENT["Rust agents<br/>own certificate · run the model"]
-        ESP["ESP32-S3 display<br/>own certificate · shows the fleet"]
+    subgraph DATA["State and events"]
+        direction LR
+        PG[("Postgres<br/>devices · deployments · tasks")]
+        CH[("ClickHouse<br/>telemetry · 7-day TTL")]
+        NATS{{"NATS<br/>live events"}}
     end
-    BROWSER --> WEB --> REST
-    REST --> FLEET
-    FLEET --> GRPC
-    REST --> PG
-    REST <-.-> NATS
-    GRPC --> PG
-    GRPC --> CH
-    DHTTP --> PG
+    subgraph SIDE["Setup and observability"]
+        direction LR
+        CERT["cert-gen<br/>CA + one cert per device"]
+        ART["/artifacts<br/>model files + .sha256"]
+        PROM["Prometheus · Grafana"]
+    end
+    WEB --> REST
     GRPC <--> AGENT
     DHTTP <--> ESP
+    CP --> DATA
+    AGENT -- "download" --> ART
+    CERT -.-> GUARD
+    PROM -.-> REST
     classDef ops fill:#0f1a2e,stroke:#38bdf8,color:#e6e9f0;
     classDef cloud fill:#0f1a2e,stroke:#38bdf8,color:#e6e9f0;
     classDef store fill:#0c1a12,stroke:#22c55e,color:#dcfce7;
     classDef edge fill:#1f1408,stroke:#f97316,color:#ffedd5;
+    classDef side fill:#1a1530,stroke:#a78bfa,color:#ede9fe;
     class BROWSER,WEB ops;
-    class REST,FLEET,GRPC,DHTTP cloud;
+    class REST,FLEET,GRPC,DHTTP,GUARD cloud;
     class PG,CH,NATS store;
-    class AGENT,ESP edge;
+    class AGENT,RT,ESP edge;
+    class CERT,ART,PROM side;
       </pre>
-    </div>
-
-    <div class="features">
-      <article class="feature">
-        <span class="tag">Operator</span>
-        <h3>Dashboard and API</h3>
-        <p>The web app adds the API key on its own server, so the browser never holds it. Deployments can start as a canary percentage, then promote to everyone or roll back — rollback returns each device to the model it ran before.</p>
-      </article>
-      <article class="feature">
-        <span class="tag green">Identity</span>
-        <h3>The certificate is the name</h3>
-        <p>Each device carries its own client certificate. The control plane reads the caller's name from that certificate, never from the request body, so one device cannot register or heartbeat as another.</p>
-      </article>
-      <article class="feature">
-        <span class="tag">On the device</span>
-        <h3>Verified, then run</h3>
-        <p>The agent hashes the download as it streams and discards the file if the digest differs; a cached file is re-hashed before each use. Inference happens on the device. “Ask a device” may first call three read-only tools: status, cached models, current model.</p>
-      </article>
-      <article class="feature">
-        <span class="tag amber">On the desk</span>
-        <h3>Why the display is separate</h3>
-        <p>The agent needs HTTP/2, protobuf, and TLS 1.3. This ESP32's TLS stack stops at TLS 1.2, and a screen gains nothing from a long-lived stream. Port 8443 runs the same register / heartbeat / ack / reconcile logic as JSON, and the board verifies the certificate name <code>control-plane</code>.</p>
-      </article>
     </div>
   </section>
 
-  <section id="display">
+  <!-- ═══ PARTS ══════════════════════════════════════════════════════════ -->
+  <section id="parts">
     <div class="sec-head">
-      <h2>The ESP32 display</h2>
-      <p>A diymore / LCDWIKI ESP32-S3 with a 240×320 ILI9341 screen and an FT6336 touch panel. It registers as <em>esp32-display-1</em>, heartbeats every 10 seconds, and is labeled <em>type = esp32-display</em> — only a device with that label receives the agent list (up to six members, running ones first).</p>
+      <div class="kicker">02 · Components</div>
+      <h2>Every part and its role</h2>
+      <p>Each row is one part: what it is responsible for, where its code lives, and what it talks to. If you are new to the repo, read this section top to bottom.</p>
     </div>
 
+    <h3 class="group"><span class="sw" style="background:var(--cloud)"></span>Operator layer <small>how people use the fleet</small></h3>
+    <div class="tbl-wrap">
+      <table class="parts">
+        <thead><tr><th>Part</th><th>Role</th><th>Code</th><th>Talks to</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Web dashboard</td>
+            <td>The operator's console. Pages: <b>fleet overview</b>, <b>deployments</b> (deploy form, canary %, requirements, promote, roll back), <b>device detail</b> (telemetry, ask the device a question) and <b>monitoring</b> (fleet charts, slow-device alerts). Its server side proxies <code>/api</code> and adds the API key, so the key never reaches the browser.</td>
+            <td><code class="path">web/src/routes/</code><br/><code class="path">web/src/hooks.server.ts</code></td>
+            <td>REST API; SSE event stream</td>
+          </tr>
+          <tr>
+            <td>REST API</td>
+            <td>The operator contract. Devices, deployments (create, promote, roll back), tasks ("ask a device"), fleet telemetry and alerts, a server-sent event stream, and the artifact file server under <code>/artifacts/</code>. Everything under <code>/api</code> requires the <code>X-Api-Key</code> header.</td>
+            <td><code class="path">control-plane/internal/api/rest/</code></td>
+            <td>Postgres, ClickHouse, NATS, targeting, gRPC server</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="group"><span class="sw" style="background:var(--cloud)"></span>Control plane <small>one Go binary, several jobs</small></h3>
+    <div class="tbl-wrap">
+      <table class="parts">
+        <thead><tr><th>Part</th><th>Role</th><th>Code</th><th>Talks to</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Entry point</td>
+            <td>Reads configuration, connects to the stores, and starts the REST, gRPC and device HTTPS listeners plus the background offline detector. Shuts down gracefully.</td>
+            <td><code class="path">control-plane/cmd/server/main.go</code></td>
+            <td>Everything below</td>
+          </tr>
+          <tr>
+            <td>Targeting</td>
+            <td>Decides who gets a deployment. A device must match the tag selector, fall inside the rollout percentage (a stable hash of deployment and device), and meet the requirements (RAM, accelerator, architecture). A device that fails a requirement is recorded as <b>skipped, with the reason</b>. Reconcile gives late-joining devices the deployment they should run.</td>
+            <td><code class="path">control-plane/internal/fleet/</code><br/><code class="path">internal/model/rollout.go</code></td>
+            <td>Postgres; pushes through the gRPC server</td>
+          </tr>
+          <tr>
+            <td>gRPC AgentService</td>
+            <td>The agents' contract, over mTLS with TLS 1.3. Seven RPCs: <code>Register</code>, <code>SendHeartbeat</code>, <code>StreamTelemetry</code>, <code>WatchDeployments</code>, <code>AckDeployment</code>, <code>WatchTasks</code>, <code>ReportTask</code>. The caller is the certificate's common name, and every call checks the device it acts on belongs to that caller.</td>
+            <td><code class="path">control-plane/internal/api/grpc/</code><br/><code class="path">control-plane/proto/device.proto</code></td>
+            <td>Agents, Postgres, ClickHouse, NATS</td>
+          </tr>
+          <tr>
+            <td>Device HTTPS API</td>
+            <td>The same contract for devices too small for gRPC: register, heartbeat, ack, and a polled <code>/state</code>, as JSON over HTTPS with TLS 1.2+ and a required client certificate. It calls the gRPC server's own authorisation code, so there is no second trust model. Devices labelled <code>type=esp32-display</code> also receive the fleet's agent list with live telemetry.</td>
+            <td><code class="path">control-plane/internal/api/devicehttp/</code></td>
+            <td>ESP32, Postgres, ClickHouse</td>
+          </tr>
+          <tr>
+            <td>mTLS and revocation</td>
+            <td>Builds the TLS configuration both device listeners use: the server certificate, client certificates verified against the fleet CA, and <code>revoked.txt</code>. The list is re-read when it changes and checked at every handshake, on every gRPC call, every 5 s on open streams, and on every device HTTPS request. If the file is unreadable, every certificate is refused.</td>
+            <td><code class="path">control-plane/internal/mtls/</code><br/><code class="path">internal/api/grpc/revocation.go</code></td>
+            <td>Cert volume</td>
+          </tr>
+          <tr>
+            <td>Offline detector</td>
+            <td>Marks a device <b>offline</b> when its last heartbeat is more than 30 s old, publishes the event, and fires the webhook.</td>
+            <td><code class="path">cmd/server/main.go</code></td>
+            <td>Postgres, NATS, webhook</td>
+          </tr>
+          <tr>
+            <td>Notifier and metrics</td>
+            <td>Optional webhook alerts (device offline, deployment failed) to Slack, Discord or any URL. Prometheus metrics at <code>/metrics</code>: devices by status, open streams, deployments by state, REST latency, telemetry inserts, and identity rejections (a device acting as another).</td>
+            <td><code class="path">internal/notify/</code><br/><code class="path">internal/metrics/</code></td>
+            <td>Webhook URL, Prometheus</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="group"><span class="sw" style="background:var(--green)"></span>State and events <small>where the truth lives</small></h3>
+    <div class="tbl-wrap">
+      <table class="parts">
+        <thead><tr><th>Part</th><th>Role</th><th>Code</th><th>Talks to</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Postgres 16</td>
+            <td>The system of record: devices (labels, capabilities, status, current model), deployments (selector, rollout %, requirements, status), each device's progress on each deployment with any skip or failure reason, and agent tasks. Small, relational, transactional.</td>
+            <td><code class="path">control-plane/internal/store/postgres/</code></td>
+            <td>Control plane only</td>
+          </tr>
+          <tr>
+            <td>ClickHouse</td>
+            <td>Inference telemetry: one row per device per probe (tokens/s, TTFT, memory, status, and <code>source</code>, which is <code>probe</code> when measured and <code>stub</code> when simulated). Append-only with async inserts, read as aggregates; rows expire after 7 days.</td>
+            <td><code class="path">control-plane/internal/store/clickhouse/</code></td>
+            <td>Control plane only</td>
+          </tr>
+          <tr>
+            <td>NATS</td>
+            <td>The event bus for live updates: device online and offline, deployment progress. The REST API turns these into the browser's server-sent event stream.</td>
+            <td><code class="path">control-plane/internal/events/nats/</code></td>
+            <td>Control plane, dashboard (via SSE)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="group"><span class="sw" style="background:var(--edge)"></span>Edge <small>where models run</small></h3>
+    <div class="tbl-wrap">
+      <table class="parts">
+        <thead><tr><th>Part</th><th>Role</th><th>Code</th><th>Talks to</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Agent: main loop</td>
+            <td>Registers with its capabilities (arch, OS, RAM, accelerators), then runs the heartbeat (every 10 s), deployment watch, task watch and telemetry loops. If anything fails it reconnects after 5 s.</td>
+            <td><code class="path">agent/src/main.rs</code><br/><code class="path">agent/src/config.rs</code></td>
+            <td>gRPC AgentService</td>
+          </tr>
+          <tr>
+            <td>Agent: gRPC client</td>
+            <td>Opens the mTLS channel with the device's own key and certificate, and verifies the control plane's certificate against the fleet CA.</td>
+            <td><code class="path">agent/src/grpc_client.rs</code></td>
+            <td>Control plane :9090</td>
+          </tr>
+          <tr>
+            <td>Agent: model runtime</td>
+            <td>The safety-critical part. It hashes the download while streaming and keeps the file only if the SHA-256 matches, stores it under its digest, and re-hashes a cached file before each use. It then loads <b>that exact file</b>: a path for LiteRT-LM, an upload by digest for Ollama. A bad file never replaces the running model.</td>
+            <td><code class="path">agent/src/model_runtime.rs</code></td>
+            <td>/artifacts, the runtime</td>
+          </tr>
+          <tr>
+            <td>Agent: telemetry</td>
+            <td>Every <code>PROBE_INTERVAL_SECS</code> (30 s), runs a short real generation and reports decode tokens/s, time to first token and memory, labelled <code>probe</code>. The stub backend reports synthetic numbers labelled <code>stub</code>.</td>
+            <td><code class="path">agent/src/telemetry.rs</code></td>
+            <td>StreamTelemetry</td>
+          </tr>
+          <tr>
+            <td>Agent: on-device tasks</td>
+            <td>"Ask a device": answers an operator's question with the loaded model, which may first call three read-only tools: <code>device_status</code>, <code>list_cached_models</code> and <code>current_model</code>. The steps are recorded with the answer.</td>
+            <td><code class="path">agent/src/agent_task.rs</code><br/><code class="path">agent/src/system.rs</code></td>
+            <td>WatchTasks, ReportTask, the runtime</td>
+          </tr>
+          <tr>
+            <td>Runtimes</td>
+            <td><b>LiteRT-LM</b> (<code>litert-lm serve</code>, CPU, GPU or NPU) for edge boards; <b>Ollama</b> for x86 or ARM hosts and CUDA; the <b>stub</b> for CI and demos. Chosen with <code>RUNTIME_BACKEND</code>, or detected automatically.</td>
+            <td><code class="path">runtimes/litert-lm/</code><br/>compose profiles <code>litert</code>, <code>ollama</code></td>
+            <td>The agent, on the device</td>
+          </tr>
+          <tr>
+            <td>ESP32-S3 display</td>
+            <td>A fleet member that shows the fleet. It registers with its own certificate, heartbeats, and every 5 s polls <code>/state</code>. It lists up to six agents; tap one to see what its newest deployment needed, whether the agent has it, and its live tokens/s and TTFT. It runs no model, and reports <code>failed</code> if a deployment targets it.</td>
+            <td><code class="path">firmware/esp32-display/src/</code>: <code>main.cpp</code> (two tasks), <code>fleet_client.*</code> (mTLS + JSON + mDNS), <code>ui.*</code>, <code>touch.*</code></td>
+            <td>Device HTTPS API :8443</td>
+          </tr>
+          <tr>
+            <td>Android example</td>
+            <td>LiteRT on a phone, fully offline: image classification and Gemma text generation. It shows the runtime side on a device class the agent does not target yet.</td>
+            <td><code class="path">examples/litert-android/</code></td>
+            <td>Nothing (no network permission)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="group"><span class="sw" style="background:var(--violet)"></span>Setup, observability and tooling <small>what makes it runnable and provable</small></h3>
+    <div class="tbl-wrap">
+      <table class="parts">
+        <thead><tr><th>Part</th><th>Role</th><th>Code</th><th>Talks to</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>cert-gen</td>
+            <td>A one-shot job that creates the fleet CA, the server certificate, and <b>one client certificate per device</b> (CN = device name). Each device mounts only its own directory. The CA key sits in a separate volume that no running service mounts.</td>
+            <td><code class="path">scripts/gen-certs.sh</code></td>
+            <td>Volumes <code>certs</code>, <code>ca-private</code></td>
+          </tr>
+          <tr>
+            <td>artifact-init and /artifacts</td>
+            <td>Creates a small sample artifact and its <code>.sha256</code> so a first deployment works with no download. Real models go in the same folder; the control plane serves them to agents.</td>
+            <td><code class="path">docker-compose.yml</code>, <code class="path">artifacts/</code></td>
+            <td>REST file server</td>
+          </tr>
+          <tr>
+            <td>Prometheus and Grafana</td>
+            <td>Prometheus scrapes <code>/metrics</code> every 15 s; Grafana starts with the Prometheus data source and a fleet overview dashboard already provisioned.</td>
+            <td><code class="path">monitoring/</code></td>
+            <td>Control plane</td>
+          </tr>
+          <tr>
+            <td>Load generator</td>
+            <td>Runs N simulated agents, each with a certificate minted in memory from the fleet CA and its own mTLS connection, through the real RPCs. It measures RPC latency and deployment fan-out. Opt-in compose profile <code>loadtest</code>, the only service besides cert-gen that mounts the CA key.</td>
+            <td><code class="path">control-plane/cmd/loadgen/</code>, <code class="path">scripts/load-test.sh</code></td>
+            <td>gRPC, REST</td>
+          </tr>
+          <tr>
+            <td>Operational scripts</td>
+            <td><code>revoke-device.sh</code> cuts off or restores a device. <code>e2e.sh</code> runs the user journeys. <code>demo-failures.sh</code> runs the failure paths live. <code>fleet-bench.sh</code> prints measured inference as a table, refusing stub data. <code>bench-device.sh</code> benchmarks LiteRT on a board.</td>
+            <td><code class="path">scripts/</code></td>
+            <td>REST API, docker compose</td>
+          </tr>
+          <tr>
+            <td>CI</td>
+            <td>Every push runs: Go (vet, race tests, Postgres integration tests against a service container), Rust (fmt, clippy, tests), Web (lint, type check, tests), the ESP32 firmware build (from the secrets template), Docker builds, and the whole stack end to end, including the failure paths.</td>
+            <td><code class="path">.github/workflows/ci.yml</code></td>
+            <td>GitHub Actions</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ FLOW ═══════════════════════════════════════════════════════════ -->
+  <section id="flow">
+    <div class="sec-head">
+      <div class="kicker">03 · End to end</div>
+      <h2>A deployment, step by step</h2>
+      <p>You choose the model and the labels. The control plane decides who qualifies. Each device runs the file only after its hash matches, then reports measured numbers that the dashboard and the desk display show.</p>
+    </div>
+    <div class="steps">
+      <article class="step"><div class="n">1</div><h3>Choose</h3><p>A model file and its SHA-256, a label selector like <em>location=barcelona</em>, an optional canary %, and requirements: RAM, CPU / GPU / NPU, architecture.</p></article>
+      <article class="step"><div class="n">2</div><h3>Target</h3><p>Matching devices inside the rollout are recorded as <em>pending</em> and get the instruction pushed on their open stream. Those lacking a requirement are <em>skipped</em>, with the reason.</p></article>
+      <article class="step"><div class="n">3</div><h3>Verify and run</h3><p>The agent reports <em>downloading</em> and <em>verifying</em>, checks the digest, loads that exact file, and reports <em>running</em>. A mismatch is reported as <em>failed</em>, and the old model keeps serving.</p></article>
+      <article class="step"><div class="n">4</div><h3>Measure and adjust</h3><p>Probe telemetry flows into ClickHouse. You promote the canary, or roll back so each device returns to the model it ran before.</p></article>
+    </div>
+    <div class="panel" style="margin-top:22px">
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Op as Operator
+    participant W as Dashboard
+    participant CP as Control plane
+    participant PG as Postgres
+    participant A as Rust agent
+    participant R as Runtime
+    participant CH as ClickHouse
+    participant D as ESP32 display
+    Op->>W: Deploy qwen to runtime=ollama, min 1 GB
+    W->>CP: POST /api/deployments (API key added server-side)
+    CP->>PG: Record deployment, then each target or skip with reason
+    CP->>A: DeploymentInstruction on WatchDeployments (mTLS)
+    A->>CP: GET /artifacts/model.gguf
+    A->>A: Hash while streaming, compare SHA-256
+    A->>R: Load the verified file (path or digest)
+    A->>CP: Ack: downloading, verifying, running
+    CP->>PG: Update progress, mark deployment completed
+    loop every 30 s
+        A->>R: Short probe generation
+        A->>CP: TelemetryReport (tok/s, TTFT, source=probe)
+        CP->>CH: Insert
+    end
+    loop every 5 s
+        D->>CP: GET /device/v1/state (mTLS)
+        CP-->>D: Agents, what each was asked, live numbers
+    end
+      </pre>
+    </div>
+  </section>
+
+  <!-- ═══ LIFECYCLES ═════════════════════════════════════════════════════ -->
+  <section id="lifecycle">
+    <div class="sec-head">
+      <div class="kicker">04 · State</div>
+      <h2>Lifecycles</h2>
+      <p>Each device has its own status on each deployment. The deployment's overall status is derived from those, and the device's own status from its heartbeats.</p>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <pre class="mermaid">
+stateDiagram-v2
+    direction TB
+    [*] --> pending: targeted
+    [*] --> skipped: fails a requirement
+    pending --> downloading
+    downloading --> verifying
+    verifying --> running: SHA-256 matches
+    verifying --> failed: mismatch
+    downloading --> failed: download error
+    running --> rolled_back: operator rolls back
+    note right of skipped
+        reason is stored, e.g.
+        needs gpu, device has cpu
+    end note
+        </pre>
+        <p style="color:var(--muted);font-size:13px;margin:10px 0 0;text-align:center">A device's status on one deployment</p>
+      </div>
+      <div class="panel">
+        <pre class="mermaid">
+stateDiagram-v2
+    direction TB
+    [*] --> pending: created
+    pending --> in_progress: first device reports
+    in_progress --> completed: every target running
+    in_progress --> partial_failure: some failed
+    in_progress --> failed: all failed
+    pending --> failed: every target skipped
+    completed --> rolled_back: rollback
+    partial_failure --> rolled_back: rollback
+        </pre>
+        <p style="color:var(--muted);font-size:13px;margin:10px 0 0;text-align:center">The deployment as a whole</p>
+      </div>
+    </div>
+    <div class="note"><b>Devices:</b> <em>online</em> from registration and each heartbeat (every 10 s); <em>offline</em> when the last heartbeat is more than 30 s old. A device that comes back reconnects by itself and is reconciled: it gets the newest deployment it should be running.</div>
+  </section>
+
+  <!-- ═══ SECURITY ═══════════════════════════════════════════════════════ -->
+  <section id="security">
+    <div class="sec-head">
+      <div class="kicker">05 · Trust</div>
+      <h2>Security model</h2>
+      <p>The guarantees are: a device can act only as itself, it runs only bytes that match the published digest, and a lost device can be cut off within seconds.</p>
+    </div>
+    <div class="features">
+      <article class="feature">
+        <span class="tag green">Identity</span>
+        <h3>The certificate is the name</h3>
+        <p>Every device has its own client certificate, and its common name is the device name. The control plane reads the caller from the verified certificate, never from the request body, so one device cannot register, heartbeat or ack as another.</p>
+      </article>
+      <article class="feature">
+        <span class="tag edge">Integrity</span>
+        <h3>Verified, then run</h3>
+        <p>Artifacts are content-addressed by SHA-256 and re-hashed before every reuse. Runtimes get a file path or a digest, never "pull by name". A tampered file is refused in under a second, and the running model is untouched.</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Revocation</span>
+        <h3>Cut off in seconds</h3>
+        <p><code>scripts/revoke-device.sh NAME</code> adds the certificate's serial to <code>revoked.txt</code>. New handshakes fail at once, open streams close within 5 s, and the device shows offline about 30 s later. <code>--undo</code> lets it back in.</p>
+      </article>
+      <article class="feature">
+        <span class="tag amber">Operators</span>
+        <h3>The key stays on the server</h3>
+        <p>The REST API requires <code>X-Api-Key</code>. The dashboard's server adds it, so the browser never holds it. The ESP32 gets the fleet list only if labelled as a display, without artifact URLs or internal IDs.</p>
+      </article>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <pre class="mermaid">
+flowchart LR
+    OP["Operator runs<br/>revoke-device.sh NAME"] --> LIST["serial appended to<br/>server/revoked.txt"]
+    LIST --> RELOAD["control plane sees<br/>the file change"]
+    RELOAD --> HS["new handshakes<br/>refused: BadCertificate"]
+    RELOAD --> STR["open gRPC streams<br/>closed within 5 s"]
+    RELOAD --> REQ["device HTTPS requests<br/>answered 403"]
+    HS --> OFF["no heartbeats:<br/>offline after 30 s"]
+    STR --> OFF
+    classDef a fill:#0f1a2e,stroke:#38bdf8,color:#e6e9f0;
+    classDef r fill:#2a0f12,stroke:#ef4444,color:#fee2e2;
+    class OP,LIST,RELOAD a;
+    class HS,STR,REQ,OFF r;
+      </pre>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table>
+        <thead><tr><th>Certificate material</th><th>Lives in</th><th>Used by</th></tr></thead>
+        <tbody>
+          <tr><td><code>ca.key</code></td><td>volume <code>ca-private</code></td><td>cert-gen and the opt-in load generator only. No running service mounts it.</td></tr>
+          <tr><td><code>server.crt</code> / <code>server.key</code>, <code>revoked.txt</code></td><td><code>certs/server/</code></td><td>Control plane. The server certificate names <code>control-plane</code>, <code>localhost</code> and any <code>SERVER_SANS</code>.</td></tr>
+          <tr><td><code>device.crt</code> / <code>device.key</code></td><td><code>certs/devices/&lt;name&gt;/</code></td><td>That one device only. The ESP32 embeds its own in a git-ignored <code>secrets.h</code>.</td></tr>
+          <tr><td><code>ca.crt</code></td><td>every directory above</td><td>Everyone, to verify the other side.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><b>Demo defaults are not production settings.</b> The API key is <code>changeme</code> and the database passwords are <code>cami</code>, so <code>docker compose up</code> works with no setup. Replace them before exposing anything; see <code>SECURITY.md</code>.</div>
+  </section>
+
+  <!-- ═══ DISPLAY ════════════════════════════════════════════════════════ -->
+  <section id="display">
+    <div class="sec-head">
+      <div class="kicker">06 · On the desk</div>
+      <h2>The ESP32 display</h2>
+      <p>A diymore ESP32-S3 with a 2.8" 240×320 ILI9341 screen and an FT6336 touch panel. It joins the fleet as <em>esp32-display-1</em>, labelled <em>type=esp32-display</em>, and turns the control plane's decisions into something you can see on the desk.</p>
+    </div>
     <div class="display-grid">
       <figure class="device" style="margin:0">
         <div class="phone" aria-label="Agent list on the display">
-          <div class="scr-bar">AGENTS <span class="up">2 up</span></div>
-          <div class="row"><span class="dot"></span><b>device-barcelona-1</b><small>gemma · SKIPPED</small></div>
-          <div class="row"><span class="dot"></span><b>device-barcelona-2</b><small class="idle">nothing asked yet</small></div>
-          <div class="row"><span class="dot off"></span><b>esp32-display-1</b><small class="idle">nothing asked yet</small></div>
+          <div class="scr-bar">AGENTS <span class="up">4 up</span></div>
+          <div class="row"><span class="dot"></span><b>device-edge-ollama</b><small class="run">qwen2.5-0.5b · RUNNING</small></div>
+          <div class="row"><span class="dot"></span><b>device-barcelona-1</b><small class="run">gemma-4-e2b · RUNNING</small></div>
+          <div class="row"><span class="dot"></span><b>device-barcelona-2</b><small>too-big · SKIPPED</small></div>
+          <div class="row"><span class="dot off"></span><b>device-edge-litert</b><small class="idle">nothing asked yet</small></div>
           <div class="scr-foot"><span>heartbeat 4 s ago</span><span>−52 dBm</span></div>
         </div>
         <figcaption>The list. Green is up, red is down.</figcaption>
       </figure>
-
       <figure class="device" style="margin:0">
-        <div class="phone" aria-label="Requirement detail after a tap">
+        <div class="phone" aria-label="Agent detail after a tap">
           <div class="scr-bar">&lt; AGENTS</div>
           <div class="detail">
-            <div class="dh">device-barcelona-1 <em>UP</em></div>
+            <div class="dh">device-edge-ollama <em>UP</em></div>
             <div class="sub">x86_64 · 6740 MB · cpu</div>
+            <div class="run">running qwen2.5-0.5b-instruct</div>
+            <div class="live">62.6 tok/s · 44 ms TTFT · measured</div>
             <div class="hr"></div>
             <div class="cap">WHAT IT WAS ASKED</div>
-            <div class="kv"><span class="model">gemma</span><span class="skip">SKIPPED</span></div>
+            <div class="kv"><span class="model">qwen2.5-0.5b</span><span class="runw">RUNNING</span></div>
             <div class="cap">NEEDED</div>
-            <div class="kv"><span>RAM</span><span class="ok">2048 MB</span></div>
-            <div class="kv"><span>Accel</span><span class="no">gpu</span></div>
+            <div class="kv"><span>RAM</span><span class="ok">1024 MB</span></div>
+            <div class="kv"><span>Accel</span><span class="ok">any</span></div>
             <div class="kv"><span>Arch</span><span class="ok">any</span></div>
-            <div class="reason">needs gpu accelerator, device has cpu</div>
           </div>
           <div class="scr-foot"><span>heartbeat 4 s ago</span><span>−52 dBm</span></div>
         </div>
-        <figcaption>After a tap. Red is what the agent lacks.</figcaption>
+        <figcaption>After a tap: hardware, live numbers, requirements.</figcaption>
       </figure>
-
       <div class="read">
-        <p><b>The header</b> counts how many agents are up. Each row is the agent's newest deployment and its status, or “nothing asked yet.”</p>
-        <p><b>A tap</b> opens that agent: its architecture, RAM, accelerators, and the model it runs, then the three requirements — green when met, red when not — with the skip or failure sentence underneath.</p>
-        <p><b>To go back,</b> tap anywhere on the detail screen, or press BOOT. BOOT can't choose a row.</p>
-        <p><b>Before it's online,</b> the list is replaced by a status pill: amber while joining Wi-Fi or registering, red when the control plane doesn't answer. The RGB LED mirrors it — blue, green, red.</p>
+        <p><b>The list</b> shows up to six agents, running ones first, each with its newest deployment and status. The header counts how many are up.</p>
+        <p><b>A tap</b> opens an agent: architecture, RAM, accelerators, the model it runs, and its latest tokens/s and time to first token. These are green and "measured" from a real runtime, grey and "stub" when simulated. Below that are the three requirements, green when met and red when not, with any skip reason.</p>
+        <p><b>Going back:</b> tap anywhere on the detail screen, or press BOOT.</p>
+        <p><b>Finding the PC:</b> <code>CP_ADDRESS</code> can be <code>pc-name.local</code>. The firmware resolves it over mDNS and asks again after any failed connection, so a new DHCP address does not break it.</p>
+        <p><b>Before it is online,</b> a status pill shows amber while joining Wi-Fi or registering, and red when the control plane does not answer. The RGB LED shows the same: blue, green or red.</p>
       </div>
     </div>
-
-    <div class="panel" style="margin-top:24px">
-      <pre class="mermaid">
+    <div style="display:grid;gap:14px;margin-top:22px">
+      <div class="panel">
+        <pre class="mermaid">
 stateDiagram-v2
     direction LR
     [*] --> Connecting
     Connecting --> Registering: Wi-Fi joined
     Registering --> AgentList: certificate accepted
     AgentList --> AgentDetail: tap a row
-    AgentDetail --> AgentList: tap / BOOT
+    AgentDetail --> AgentList: tap or BOOT
     AgentList --> Unreachable: control plane silent
     Unreachable --> AgentList: next poll succeeds
-    note right of AgentList
-        polls /state every 5 s
-    end note
-      </pre>
+        </pre>
+      </div>
+      <div class="panel">
+        <pre class="mermaid">
+flowchart LR
+    subgraph C0["Core 0 · network task"]
+        N1["Wi-Fi + mDNS"] --> N2["register · heartbeat<br/>GET /state every 5 s"]
+        N2 --> N3["parse JSON into<br/>a Snapshot"]
+    end
+    subgraph C1["Core 1 · UI loop"]
+        U1["read Snapshot<br/>under a mutex"] --> U2["draw list or detail"]
+        U3["touch + BOOT"] --> U2
+    end
+    N3 -. "mutex" .-> U1
+    classDef e fill:#1f1408,stroke:#f97316,color:#ffedd5;
+    class N1,N2,N3,U1,U2,U3 e;
+        </pre>
+      </div>
     </div>
-  </section>
-
-  <section id="limits">
-    <div class="sec-head">
-      <h2>What the display will and won't do</h2>
-      <p>It's a fleet member so you can watch the decisions on the desk — not an inference device. A model needs gigabytes of RAM; this board has 512 KB of on-chip SRAM.</p>
-    </div>
-    <div class="tbl-wrap">
-      <table>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="dn">
         <thead><tr><th>It does</th><th>It does not</th></tr></thead>
         <tbody>
-          <tr>
-            <td><span class="check">✓</span>Register under its certificate name and heartbeat like an agent</td>
-            <td><span class="cross">✕</span>Run LiteRT-LM, Ollama, or any model</td>
-          </tr>
-          <tr>
-            <td><span class="check">✓</span>List who is up, and what the newest deployment required</td>
-            <td><span class="cross">✕</span>Show artifact URLs, private keys, or another device's certificate</td>
-          </tr>
-          <tr>
-            <td><span class="check">✓</span>Report <em>failed</em> if a deployment targets the board, so the rollout isn't left waiting</td>
-            <td><span class="cross">✕</span>Answer “Ask a device” — those tasks stay pending</td>
-          </tr>
-          <tr>
-            <td><span class="check">✓</span>Get skipped, with a reason, when a model needs more RAM, a GPU / NPU, or another architecture</td>
-            <td><span class="cross">✕</span>Hold a deployment open</td>
-          </tr>
-          <tr>
-            <td><span class="check">✓</span>Go offline on the dashboard ~30 s after its last heartbeat</td>
-            <td><span class="cross">✕</span>Stream token timings — there's nothing to measure</td>
-          </tr>
+          <tr><td><span class="check">✓</span>Register under its certificate name and heartbeat like an agent</td><td><span class="cross">✕</span>Run LiteRT-LM, Ollama or any model: it has 512 KB of SRAM</td></tr>
+          <tr><td><span class="check">✓</span>Show who is up, what each agent was asked, and its live inference numbers</td><td><span class="cross">✕</span>Show artifact URLs, keys, internal IDs or other devices' certificates</td></tr>
+          <tr><td><span class="check">✓</span>Report <em>failed</em> if a deployment targets it, so a rollout is not left waiting</td><td><span class="cross">✕</span>Answer "ask a device"; tasks sent to it stay pending</td></tr>
+          <tr><td><span class="check">✓</span>Get skipped, with a reason, by models needing more RAM, a GPU or NPU, or another architecture</td><td><span class="cross">✕</span>Measure inference itself; the numbers it shows come from the agents</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="ports">
-      <span class="p"><b>:5173</b> &nbsp;dashboard</span>
-      <span class="p"><b>:8080</b> &nbsp;operator API</span>
-      <span class="p"><b>:9090</b> &nbsp;agents · gRPC</span>
-      <span class="p"><b>:8443</b> &nbsp;display · HTTPS</span>
+  </section>
+
+  <!-- ═══ RESULTS ════════════════════════════════════════════════════════ -->
+  <section id="results">
+    <div class="sec-head">
+      <div class="kicker">07 · Evidence</div>
+      <h2>Measured results</h2>
+      <p>These numbers come from running the stack on one laptop-class machine (Ryzen AI Z2 Extreme, 12 threads; Docker VM with 6.6 GB), with everything sharing it. They are a baseline, not a capacity claim. How to reproduce each one is in <a href="results.md">results.md</a>.</p>
+    </div>
+    <div class="grid-2">
+      <div class="tbl-wrap">
+        <table class="num">
+          <thead><tr><th>Real inference</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>Model</td><td>Qwen2.5-0.5B-Instruct, GGUF Q4_K_M, 469 MB</td></tr>
+            <tr><td>Download + SHA-256 check</td><td>25 s</td></tr>
+            <tr><td>Load into Ollama</td><td>43 s, including warm-up</td></tr>
+            <tr><td>Decode speed p50 / p5</td><td>62.6 / 24.6 tok/s (200 samples, CPU)</td></tr>
+            <tr><td>Time to first token p50 / p95</td><td>44 / 1,321 ms</td></tr>
+            <tr><td>Model memory</td><td>553 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tbl-wrap">
+        <table class="num">
+          <thead><tr><th>Failure path</th><th>Outcome</th></tr></thead>
+          <tbody>
+            <tr><td>Tampered artifact</td><td>Refused in &lt; 1 s; the real model kept serving</td></tr>
+            <tr><td>Staged canary</td><td>25%: 0 of 2 devices; 50%: 1 of 2</td></tr>
+            <tr><td>Promote, then roll back</td><td>Both devices on the candidate in 5 s, both restored in 1–5 s</td></tr>
+            <tr><td>Agent stopped</td><td>Offline at 27 s; back online by itself</td></tr>
+            <tr><td>Certificate revoked</td><td>Streams cut at 5 s, offline at 36 s</td></tr>
+            <tr><td>Revocation lifted</td><td>Reconnected in 5 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="num">
+        <thead><tr><th>Simulated agents</th><th>Ramp</th><th>Heartbeat p50 / p95 / p99</th><th>Errors</th><th>Control-plane memory / CPU</th><th>Postgres conns</th><th>Deployment to all</th></tr></thead>
+        <tbody>
+          <tr><td>200</td><td>4.5 s</td><td>5.3 / 23.8 / 55 ms</td><td>0</td><td>64 MB / 4%</td><td>18</td><td>n/a</td></tr>
+          <tr><td>500</td><td>10.9 s</td><td>7.7 / 42.3 / 175 ms</td><td>0</td><td>163 MB / 45%</td><td>18</td><td>5.4 s</td></tr>
+          <tr><td>1,000</td><td>21.5 s</td><td>11.1 / 68.6 / 277 ms</td><td>0</td><td>312 MB / 69%</td><td>18</td><td>10.7 s</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><b>What the numbers say.</b> Steady state is cheap: about 0.3 MB per connected agent, and Postgres stays on its pool of 18 connections. Fan-out is linear at about 10.7 ms per device, because creating a deployment targets devices one at a time. That is the next bottleneck to remove. The real model also showed a quality gap the stub never could: it answered a status question without calling its tool, and made the facts up.</div>
+  </section>
+
+  <!-- ═══ QUALITY ════════════════════════════════════════════════════════ -->
+  <section id="quality">
+    <div class="sec-head">
+      <div class="kicker">08 · Proof</div>
+      <h2>Testing and CI</h2>
+      <p>The rule is "done means proven". Every push runs six jobs. Two of them start the whole stack and drive it the way a user would, including the failure paths.</p>
+    </div>
+    <div class="panel">
+      <pre class="mermaid">
+flowchart TB
+    PUSH["push / PR to main"] --> GO & RUST & WEBJ & FW & DOCK & E2E
+    subgraph GO["Go"]
+        direction TB
+        G1["protoc · vet"] --> G2["tests -race"] --> G3["Postgres integration<br/>service container"]
+    end
+    subgraph RUST["Rust"]
+        direction TB
+        R1["fmt · clippy -D warnings"] --> R2["cargo test"]
+    end
+    subgraph WEBJ["Web"]
+        direction TB
+        W1["npm ci · eslint"] --> W2["svelte-check · vitest"]
+    end
+    subgraph FW["Firmware"]
+        direction TB
+        F1["secrets.example.h<br/>as secrets.h"] --> F2["pio run"]
+    end
+    subgraph DOCK["Docker"]
+        D1["control plane · agent · web images"]
+    end
+    subgraph E2E["End to end"]
+        direction TB
+        E1["compose up"] --> E2["e2e.sh<br/>11 journeys"] --> E3["demo-failures.sh<br/>tamper · canary · offline · revoke"]
+    end
+    classDef j fill:#0f1a2e,stroke:#38bdf8,color:#e6e9f0;
+    class G1,G2,G3,R1,R2,W1,W2,F1,F2,D1,E1,E2,E3 j;
+      </pre>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="parts">
+        <thead><tr><th>Suite</th><th>What it proves</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Go unit</td><td>Identity checks (a device cannot act as another), targeting and requirements, rollout buckets, revocation list parsing, reloading and failing closed, the display API (agents only for displays, no internal IDs, live telemetry attached)</td><td><code class="path">control-plane/internal/**/*_test.go</code></td></tr>
+          <tr><td>Go integration</td><td>The real SQL: device upserts, stale detection, completion and partial-failure logic, assignments, the agent list with its newest ask and requirements</td><td><code class="path">internal/store/postgres/store_test.go</code></td></tr>
+          <tr><td>Rust</td><td>SHA-256 verification, the artifact cache, runtime selection, config parsing, the stub end to end</td><td><code class="path">agent/src</code>, <code class="path">agent/tests</code></td></tr>
+          <tr><td>Web</td><td>The typed API client and its error handling</td><td><code class="path">web/src/lib/api.test.ts</code></td></tr>
+          <tr><td>End to end</td><td>Deploy, telemetry, requirements, rollback, canary and promote, ask a device, control-plane restart, a device that joins late</td><td><code class="path">scripts/e2e.sh</code></td></tr>
+          <tr><td>Failure paths</td><td>Tampered artifact refused with the model kept, staged canary, offline and recovery, revocation and un-revocation</td><td><code class="path">scripts/demo-failures.sh</code></td></tr>
+          <tr><td>Load (manual)</td><td>Up to 1,000 agents with real identities; latency, memory, fan-out time</td><td><code class="path">scripts/load-test.sh</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ DECISIONS ══════════════════════════════════════════════════════ -->
+  <section id="decisions">
+    <div class="sec-head">
+      <div class="kicker">09 · Why it is built this way</div>
+      <h2>Design decisions and known limits</h2>
+      <p>Each decision has a cost, and it is written down. Full records are in <a href="decisions.md">decisions.md</a>; the debugging stories behind several of them are in <a href="field-notes.md">field-notes.md</a>.</p>
+    </div>
+    <div class="features">
+      <article class="feature"><span class="tag green">Identity</span><h3>Certificate, not request body</h3><p>One certificate per device, so a stolen device can act only as itself. The cost: certificates must be issued per device and revoked when one is lost.</p></article>
+      <article class="feature"><span class="tag edge">Integrity</span><h3>Run the verified file</h3><p>Digest-addressed artifacts, never pulled by name. The cost: a full download per device, with no layer sharing.</p></article>
+      <article class="feature"><span class="tag">Targeting</span><h3>Skips carry a reason</h3><p>"Why didn't device X get it?" is answered in the data, which the dashboard and the desk display show. The cost: devices must report their capabilities truthfully.</p></article>
+      <article class="feature"><span class="tag">Rollout</span><h3>Stable hash buckets</h3><p>The same answer on any instance, after any restart; promotion only adds devices. The cost: percentages are lumpy on small fleets.</p></article>
+      <article class="feature"><span class="tag green">Data</span><h3>Postgres for state, ClickHouse for telemetry</h3><p>Opposite shapes, each in the store that suits it. The cost: two databases, joined in Go.</p></article>
+      <article class="feature"><span class="tag amber">Devices</span><h3>HTTPS for microcontrollers, same trust</h3><p>A second protocol is acceptable; a second trust model is not. The cost: the display polls instead of streaming.</p></article>
+      <article class="feature"><span class="tag">Security</span><h3>A watched revocation list</h3><p>Checked at the handshake, per call and on open streams, and failing closed. The cost: a single control plane, and certificates are still long-lived.</p></article>
+      <article class="feature"><span class="tag violet">Honesty</span><h3>Simulated numbers are labelled</h3><p>Every telemetry row says probe or stub, and the benchmark refuses stub data. When real inference arrived, nothing had to be relabelled.</p></article>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="dn">
+        <thead><tr><th>Known limit</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td>One control-plane instance</td><td>Live streams are tracked in memory; a second instance would not see devices connected to the first.</td></tr>
+          <tr><td>Serial fan-out</td><td>About 10.7 ms per device when a deployment is created. Batched inserts and concurrent pushes would fix it.</td></tr>
+          <tr><td>Revocation is a local list</td><td>No CRL or OCSP, and certificates last years. Short-lived certificates would be the real fix.</td></tr>
+          <tr><td>Small models skip tools</td><td>A 0.5B model answered without calling <code>device_status</code>. Next step: require tool evidence for status questions.</td></tr>
+          <tr><td>Telemetry is a probe</td><td>The numbers come from the agent's own short request, not from real user traffic.</td></tr>
+          <tr><td>Some endpoints are open</td><td><code>/metrics</code> and the event stream do not need the key; keep the control plane on a private network.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ REFERENCE ══════════════════════════════════════════════════════ -->
+  <section id="reference">
+    <div class="sec-head">
+      <div class="kicker">10 · Reference</div>
+      <h2>Run it, ports, and the repository map</h2>
+    </div>
+    <div class="grid-2">
+      <div>
+        <pre class="cmd"><code><span class="c"># the whole stack, stub inference</span>
+cp .env.example .env
+docker compose up -d --build
+open http://localhost:5173
+
+<span class="c"># a real model on this machine</span>
+docker compose --profile ollama up -d
+<span class="c"># put model.gguf + model.gguf.sha256 in artifacts/,</span>
+<span class="c"># deploy to {"runtime":"ollama"}, then:</span>
+scripts/fleet-bench.sh device-edge-ollama
+
+<span class="c"># prove it</span>
+scripts/e2e.sh
+scripts/demo-failures.sh
+scripts/load-test.sh 1000 &amp;&amp; scripts/load-test.sh --cleanup
+
+<span class="c"># cut a device off, and let it back</span>
+scripts/revoke-device.sh device-barcelona-2
+scripts/revoke-device.sh device-barcelona-2 --undo</code></pre>
+        <div class="ports" style="margin-top:14px">
+          <span class="p"><b>:5173</b>dashboard</span>
+          <span class="p"><b>:8080</b>REST · /metrics · /artifacts</span>
+          <span class="p dev"><b>:9090</b>agents · gRPC mTLS</span>
+          <span class="p dev"><b>:8443</b>display · HTTPS mTLS</span>
+          <span class="p"><b>:9091</b>Prometheus</span>
+          <span class="p"><b>:3001</b>Grafana</span>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin:10px 0 0">Only these are published on the host. Postgres (5432), ClickHouse (9000), NATS (4222), Ollama (11434) and LiteRT-LM (9379) stay on the compose network.</p>
+      </div>
+      <div class="panel">
+<pre class="tree"><span class="d">control-plane/</span>        <span class="x">Go: the control plane</span>
+  cmd/server/          <span class="x">entry point, offline detector</span>
+  cmd/loadgen/         <span class="x">simulated agents with real identities</span>
+  internal/api/rest/   <span class="x">operator API</span>
+  internal/api/grpc/   <span class="x">AgentService, revocation interceptors</span>
+  internal/api/devicehttp/ <span class="x">HTTPS API for the ESP32</span>
+  internal/fleet/      <span class="x">targeting, requirements, reconcile</span>
+  internal/mtls/       <span class="x">TLS config, revocation list</span>
+  internal/store/      <span class="x">postgres/, clickhouse/</span>
+  proto/device.proto   <span class="x">the device contract</span>
+<span class="d">agent/</span>                <span class="x">Rust: the edge agent</span>
+<span class="d">web/</span>                  <span class="x">SvelteKit: the dashboard</span>
+<span class="d">firmware/esp32-display/</span> <span class="x">C++: the desk display</span>
+<span class="d">runtimes/litert-lm/</span>   <span class="x">LiteRT-LM server image</span>
+<span class="d">examples/litert-android/</span> <span class="x">LiteRT on a phone</span>
+<span class="d">monitoring/</span>           <span class="x">Prometheus + Grafana</span>
+<span class="d">scripts/</span>              <span class="x">certs, revoke, e2e, failures, load, bench</span>
+<span class="d">artifacts/</span>            <span class="x">model files + .sha256</span>
+<span class="d">docs/</span>                 <span class="x">this page, results, decisions, notes</span>
+docker-compose.yml     <span class="x">the stack, profiles: litert, ollama, loadtest</span>
+.github/workflows/ci.yml</pre>
+      </div>
     </div>
   </section>
 
@@ -491,9 +941,13 @@ stateDiagram-v2
 
 <footer class="foot">
   <div class="wrap">
-    More in this repo: <a href="esp32-display.md">the ESP32 technical guide</a> ·
-    <a href="architecture.html">the component architecture</a>.
-    Firmware in <code>firmware/esp32-display</code>; the display API in <code>control-plane/internal/api/devicehttp</code>.
+    Go deeper: <a href="results.md">measured results</a> ·
+    <a href="decisions.md">design decisions</a> ·
+    <a href="field-notes.md">field notes</a> ·
+    <a href="esp32-display.md">ESP32 technical guide</a> ·
+    <a href="edge-device-setup.md">Raspberry Pi setup</a> ·
+    <a href="architecture.html">component reference</a> ·
+    <a href="../README.md">README</a>
   </div>
 </footer>
 
@@ -526,7 +980,9 @@ stateDiagram-v2
       labelBoxBkgColor: '#192134',
       labelBoxBorderColor: '#26324b',
       edgeLabelBackground: '#141b2d'
-    }
+    },
+    flowchart: { curve: 'basis' },
+    sequence: { useMaxWidth: true, wrap: true }
   });
 </script>
 </body>

@@ -18,7 +18,7 @@ Please include:
 
 - A description of the issue and why you believe it is a security problem
 - Steps to reproduce, or a proof of concept
-- The affected component (`control-plane`, `agent`, `web`) and commit
+- The affected component (`control-plane`, `agent`, `web`, `firmware`) and commit
 
 You can expect an initial acknowledgement within a reasonable effort basis.
 This is a community project without a dedicated security team, so please set
@@ -35,7 +35,9 @@ Compose**, not for production. In particular:
 | Postgres credentials | `cami` / `cami` (in `docker-compose.yml`) | Move to secrets, use a strong password, do not expose the port. |
 | ClickHouse credentials | `cami` / `cami` (in `docker-compose.yml`) | Same as above. |
 | Grafana admin | `admin` / `${GRAFANA_PASSWORD:-changeme}` | Set `GRAFANA_PASSWORD`; disable anonymous access. |
-| mTLS certificates | A demo CA from `scripts/gen-certs.sh`: one certificate per device (CN = device name), CA key kept in its own volume | Use a real CA with enrollment, rotation and revocation; keep the CA key off every device. |
+| mTLS certificates | A demo CA from `scripts/gen-certs.sh`: one certificate per device (CN = device name), CA key kept in its own volume; revocation through `scripts/revoke-device.sh` | Use a real CA with enrollment and short-lived, rotated certificates; keep the CA key off every device. |
+| Unauthenticated endpoints | `/metrics`, `/api/events/stream` and `/artifacts/` need no API key | Keep the control plane on a private network, or put these behind a proxy. |
+| ESP32 firmware secrets | Wi-Fi credentials and the device key are compiled in from a git-ignored `secrets.h` | Enable flash encryption on boards that leave your hands. |
 | Service ports | Bound for local access | Do not expose Postgres, ClickHouse, or NATS to the internet. |
 
 These demo credentials are intentionally visible in `docker-compose.yml` so the
@@ -58,6 +60,12 @@ privately using the process above rather than opening an issue.
 - **Device authentication** — device-to-control-plane gRPC uses mutual TLS with
   one certificate per device. The control plane reads the caller's identity
   from the certificate and rejects any request that names a different device.
+  The ESP32 uses the same identity checks over HTTPS (port 8443).
+- **Revocation** — `scripts/revoke-device.sh NAME` adds the certificate's
+  serial to `revoked.txt`. The control plane re-reads it on change and checks
+  it at the handshake, on every gRPC call, every 5 s on open streams, and on
+  every device HTTPS request. If the file exists but cannot be read, every
+  certificate is refused. There is no CRL or OCSP.
 - **Verified execution** — the runtime loads the file whose SHA-256 was
   checked (by path for LiteRT-LM, by content digest for Ollama).
 - **API authentication** — the REST API requires `X-Api-Key` (or bearer auth).
